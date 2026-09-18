@@ -37,7 +37,33 @@ async function handleStreamProxy(req, res) {
       res.setHeader('Content-Type', contentType);
     }
 
-    // Se for playlist m3u8, podemos reescrever as URLs relativas se necessário
+    // Se for playlist m3u8, reescreve as URLs relativas para passarem pelo proxy com User-Agent
+    if (targetUrl.includes('.m3u8')) {
+      const m3u8Res = await axios.get(targetUrl, { headers, responseType: 'text', timeout: 12000 });
+      const parsedBase = new URL(targetUrl);
+      const lines = m3u8Res.data.split('\n');
+      const rewritten = lines.map(line => {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) return line;
+        let absoluteUrl = '';
+        if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+          absoluteUrl = trimmed;
+        } else if (trimmed.startsWith('/')) {
+          absoluteUrl = `${parsedBase.origin}${trimmed}`;
+        } else {
+          const basePath = parsedBase.pathname.substring(0, parsedBase.pathname.lastIndexOf('/') + 1);
+          absoluteUrl = `${parsedBase.origin}${basePath}${trimmed}`;
+        }
+        return `/api/proxy/stream?url=${encodeURIComponent(absoluteUrl)}&ua=${encodeURIComponent(customUa)}`;
+      }).join('\n');
+
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Headers', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+      return res.send(rewritten);
+    }
+
     response.data.pipe(res);
   } catch (error) {
     console.error('Erro no Stream Proxy:', error.message, 'URL:', targetUrl);

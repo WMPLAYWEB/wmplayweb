@@ -146,12 +146,32 @@ function parseInfo(infoStr) {
   return result;
 }
 
+const chHosts = {
+  '1': 'http://sixcine.store:80/live/%s/%s.m3u8',
+  '2': 'http://bttv.lat:80/live/%s/%s.m3u8'
+};
+const chAccounts = {
+  '1': ['468489339/355818635', '254959548/138442946', '338899111/421696680', '231426366/687653441', '276842566/138235928'],
+  '2': ['lvieira/8574068490', 'Dirlan345/Asd12', 'Bruno14pc/6qaz36281vu', 'Wellington015/Fnsiptv22', 'Carol519S/Tc71']
+};
+
 function resolveChannelStream(rawLink) {
   if (!rawLink) return null;
   const link = rawLink.trim();
   if (link.startsWith('http://') || link.startsWith('https://')) {
     const cleanUrl = link.split('|')[0];
     return `/api/proxy/stream?url=${encodeURIComponent(cleanUrl)}`;
+  }
+  if (link.startsWith('chresolver1=')) {
+    const clean = link.replace('chresolver1=', '').trim();
+    const parts = clean.split('#');
+    const chId = parts[0];
+    const serverId = parts[1] || '1';
+    const hostTemplate = chHosts[serverId] || chHosts['1'];
+    const accList = chAccounts[serverId] || chAccounts['1'];
+    const acc = accList[0];
+    const streamUrl = hostTemplate.replace('%s', acc).replace('%s', chId);
+    return `/api/proxy/stream?url=${encodeURIComponent(streamUrl)}&ua=XC-IPTV`;
   }
   return null;
 }
@@ -166,7 +186,28 @@ async function getChannels() {
     return disk;
   }
   const res = await axios.get(GIST_URLS.channels, { timeout: 20000 });
-  const sanitized = res.data.replace(/&(?!amp;|lt;|gt;|quot;|apos;)/g, '&amp;');
+  const rawXml = res.data;
+
+  // Extrai hosts e credenciais atualizados do XML se presentes
+  const host1Match = rawXml.match(/<hostname_1>(.*?)<\/hostname_1>/);
+  const users1Match = rawXml.match(/<users_1>(.*?)<\/users_1>/);
+  const host2Match = rawXml.match(/<hostname_2>(.*?)<\/hostname_2>/);
+  const users2Match = rawXml.match(/<users_2>(.*?)<\/users_2>/);
+
+  if (host1Match) {
+    try { chHosts['1'] = Buffer.from(host1Match[1], 'base64').toString('utf8'); } catch(e){}
+  }
+  if (users1Match) {
+    try { chAccounts['1'] = Buffer.from(users1Match[1], 'base64').toString('utf8').split('|'); } catch(e){}
+  }
+  if (host2Match) {
+    try { chHosts['2'] = Buffer.from(host2Match[1], 'base64').toString('utf8'); } catch(e){}
+  }
+  if (users2Match) {
+    try { chAccounts['2'] = Buffer.from(users2Match[1], 'base64').toString('utf8').split('|'); } catch(e){}
+  }
+
+  const sanitized = rawXml.replace(/&(?!amp;|lt;|gt;|quot;|apos;)/g, '&amp;');
   const parsed = await parser.parseStringPromise(sanitized);
   const categories = {};
   let currentCategory = 'Geral';
@@ -304,6 +345,34 @@ async function handleStreamProxy(req, res) {
       headers['Referer'] = 'https://pluto.tv/';
       headers['Origin'] = 'https://pluto.tv';
     }
+
+    // Se for playlist m3u8, reescreve as URLs relativas para passarem pelo proxy com User-Agent
+    if (targetUrl.includes('.m3u8')) {
+      const m3u8Res = await axios.get(targetUrl, { headers, responseType: 'text', timeout: 12000 });
+      const parsedBase = new URL(targetUrl);
+      const lines = m3u8Res.data.split('\n');
+      const rewritten = lines.map(line => {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) return line;
+        let absoluteUrl = '';
+        if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+          absoluteUrl = trimmed;
+        } else if (trimmed.startsWith('/')) {
+          absoluteUrl = `${parsedBase.origin}${trimmed}`;
+        } else {
+          const basePath = parsedBase.pathname.substring(0, parsedBase.pathname.lastIndexOf('/') + 1);
+          absoluteUrl = `${parsedBase.origin}${basePath}${trimmed}`;
+        }
+        return `/api/proxy/stream?url=${encodeURIComponent(absoluteUrl)}&ua=${encodeURIComponent(customUa)}`;
+      }).join('\n');
+
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Headers', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+      return res.send(rewritten);
+    }
+
     const response = await axios({ method: 'get', url: targetUrl, headers, responseType: 'stream', timeout: 15000 });
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', '*');

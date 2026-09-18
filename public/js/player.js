@@ -46,8 +46,8 @@ function playStream(url, title = 'Reproduzindo', isLive = false) {
   videoElement.pause();
   videoElement.removeAttribute('src');
 
-  // CASO 1: É um Embed / Iframe (Ex: Blogger / AnimesOnline / Embeds)
-  const isEmbed = url.includes('/embed') || url.includes('blogger.com') || (!url.includes('.mp4') && !url.includes('.m3u8') && !url.includes('wasabisys') && !url.includes('/api/'));
+  // CASO 1: É um Embed / Iframe explícito (Ex: Blogger / AnimesOnline / Embeds externos)
+  const isEmbed = url.includes('/embed') || url.includes('blogger.com') || url.includes('superembeds.com') || url.includes('embedrise.com');
   if (isEmbed && embedPlayer) {
     videoElement.style.display = 'none';
     embedPlayer.style.display = 'block';
