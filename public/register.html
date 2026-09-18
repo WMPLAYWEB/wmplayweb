@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WMPlayWeb - Registrar</title>
+  <link rel="icon" type="image/png" href="https://i.imgur.com/BfFiAAy.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:'Plus Jakarta Sans',system-ui,sans-serif; background:#090d12; color:#f3f4f6; display:flex; align-items:center; justify-content:center; min-height:100vh; }
+    .container { width:100%; max-width:420px; padding:24px; }
+    .card { background:#121822; border:1px solid #1f2937; border-radius:18px; padding:40px 32px; box-shadow:0 20px 60px -15px rgba(0,0,0,0.7); }
+    .brand { display:flex; align-items:center; justify-content:center; gap:14px; margin-bottom:32px; }
+    .brand img { width:48px; height:48px; border-radius:12px; box-shadow:0 4px 12px rgba(59,130,246,0.3); }
+    .brand-text { font-size:1.6rem; font-weight:800; }
+    .brand-text .highlight { color:#3b82f6; }
+    .subtitle { text-align:center; color:#9ca3af; font-size:0.9rem; margin-bottom:28px; }
+    .form-group { margin-bottom:18px; }
+    .form-group label { display:block; font-size:0.85rem; font-weight:600; color:#9ca3af; margin-bottom:6px; }
+    .form-group input { width:100%; padding:12px 16px; border-radius:12px; border:1px solid #1f2937; background:#151d29; color:#fff; font-size:0.95rem; outline:none; transition:all 0.25s ease; }
+    .form-group input:focus { border-color:#3b82f6; box-shadow:0 0 0 3px rgba(59,130,246,0.2); }
+    .btn { width:100%; padding:13px; border:none; border-radius:12px; background:#3b82f6; color:#fff; font-size:1rem; font-weight:700; cursor:pointer; transition:all 0.25s ease; margin-top:6px; }
+    .btn:hover { background:#2563eb; transform:translateY(-2px); }
+    .link { text-align:center; margin-top:12px; }
+    .link a { color:#3b82f6; text-decoration:none; font-weight:600; }
+    .error { background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); color:#f87171; padding:10px 14px; border-radius:10px; font-size:0.85rem; margin-bottom:16px; text-align:center; display:none; }
+    .footer-text { text-align:center; color:#4b5563; font-size:0.75rem; margin-top:24px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="brand">
+        <img src="https://i.imgur.com/kjtlfSP.png" alt="WMPlayWeb">
+        <span class="brand-text">WM<span class="highlight">PLAY</span><span class="brand-badge">WEB</span></span>
+      </div>
+      <p class="subtitle">Crie sua conta para acessar o catálogo completo</p>
+      <div class="error" id="errorMsg"></div>
+      <form id="registerForm">
+        <div class="form-group">
+          <label for="username">Usuário</label>
+          <input type="text" id="username" name="username" placeholder="Digite seu usuário" autocomplete="username" required>
+        </div>
+        <div class="form-group">
+          <label for="password">Senha</label>
+          <input type="password" id="password" name="password" placeholder="Digite sua senha" autocomplete="new-password" required>
+        </div>
+        <div class="form-group">
+          <label for="confirmPassword">Confirmar Senha</label>
+          <input type="password" id="confirmPassword" name="confirmPassword" placeholder="Confirme sua senha" autocomplete="new-password" required>
+        </div>
+        <button type="submit" class="btn" id="registerBtn">Cadastrar</button>
+      </form>
+      <div class="link"><a href="/login.html">Já tem conta? Entrar</a></div>
+    </div>
+    <p class="footer-text">&copy; 2026 WMPlayWeb. Acesso exclusivo para usuários autorizados.</p>
+  </div>
+  <script>
+    const form = document.getElementById('registerForm');
+    const errorMsg = document.getElementById('errorMsg');
+    const registerBtn = document.getElementById('registerBtn');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorMsg.style.display = 'none';
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const confirmPassword = document.getElementById('confirmPassword').value;
+      if (password !== confirmPassword) { errorMsg.textContent = 'Senhas não coincidem.'; errorMsg.style.display = 'block'; return; }
+      registerBtn.disabled = true; registerBtn.textContent = 'Cadastrando...';
+      try {
+        const res = await fetch('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
+        const data = await res.json();
+        if (data.success) { window.location.href = '/login.html'; } else { errorMsg.textContent = data.error || 'Falha ao registrar.'; errorMsg.style.display = 'block'; }
+      } catch (err) { errorMsg.textContent = 'Erro de conexão com o servidor.'; errorMsg.style.display = 'block'; }
+      registerBtn.disabled = false; registerBtn.textContent = 'Cadastrar';
+    });
+  </script>
+</body>
+</html>

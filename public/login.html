@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WMPlayWeb - Login</title>
+  <link rel="icon" type="image/png" href="https://i.imgur.com/BfFiAAy.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+      background: #090d12;
+      color: #f3f4f6;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-image: radial-gradient(ellipse at 50% 0%, rgba(59, 130, 246, 0.15) 0%, transparent 60%);
+    }
+    .login-container {
+      width: 100%;
+      max-width: 420px;
+      padding: 24px;
+    }
+    .login-card {
+      background: #121822;
+      border: 1px solid #1f2937;
+      border-radius: 18px;
+      padding: 40px 32px;
+      box-shadow: 0 20px 60px -15px rgba(0, 0, 0, 0.7);
+    }
+    .login-brand {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      margin-bottom: 32px;
+    }
+    .login-brand img {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+    }
+    .login-brand-text {
+      font-size: 1.6rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+    .login-brand-text .highlight { color: #3b82f6; }
+    .login-brand-badge {
+      background: linear-gradient(135deg, #f59e0b, #ea580c);
+      color: #000;
+      font-size: 0.6rem;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-left: 4px;
+      vertical-align: super;
+    }
+    .login-subtitle {
+      text-align: center;
+      color: #9ca3af;
+      font-size: 0.9rem;
+      margin-bottom: 28px;
+    }
+    .form-group {
+      margin-bottom: 18px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #9ca3af;
+      margin-bottom: 6px;
+    }
+    .form-group input {
+      width: 100%;
+      padding: 12px 16px;
+      border-radius: 12px;
+      border: 1px solid #1f2937;
+      background: #151d29;
+      color: #fff;
+      font-size: 0.95rem;
+      font-family: inherit;
+      outline: none;
+      transition: all 0.25s ease;
+    }
+    .form-group input:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    }
+    .form-group input::placeholder { color: #4b5563; }
+    .login-btn {
+      width: 100%;
+      padding: 13px;
+      border: none;
+      border-radius: 12px;
+      background: #3b82f6;
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      box-shadow: 0 4px 16px rgba(59, 130, 246, 0.4);
+      margin-top: 6px;
+    }
+    .login-btn:hover {
+      background: #2563eb;
+      transform: translateY(-2px);
+    }
+    .login-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .error-msg {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #f87171;
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+      display: none;
+      text-align: center;
+    }
+    .footer-text {
+      text-align: center;
+      color: #4b5563;
+      font-size: 0.75rem;
+      margin-top: 24px;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <div class="login-card">
+      <div class="login-brand">
+        <img src="https://i.imgur.com/kjtlfSP.png" alt="WMPlayWeb">
+        <span class="login-brand-text">WM<span class="highlight">PLAY</span><span class="login-brand-badge">WEB</span></span>
+      </div>
+      <p class="login-subtitle">Faça login para acessar o catálogo completo</p>
+      
+      <div class="error-msg" id="errorMsg"></div>
+      
+      <form id="loginForm">
+        <div class="form-group">
+          <label for="username">Usuário</label>
+          <input type="text" id="username" name="username" placeholder="Digite seu usuário" autocomplete="username" required>
+        </div>
+        <div class="form-group">
+          <label for="password">Senha</label>
+          <input type="password" id="password" name="password" placeholder="Digite sua senha" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="login-btn" id="loginBtn">Entrar</button>
+      </form>
+      
+      <div style="text-align: center; margin-top: 18px;">
+        <span style="color: #9ca3af; font-size: 0.88rem;">Não tem uma conta? </span>
+        <a href="/register.html" style="color: #3b82f6; text-decoration: none; font-weight: 600; font-size: 0.88rem;">Cadastre-se</a>
+      </div>
+      
+      <p class="footer-text">&copy; 2026 WMPlayWeb. Acesso exclusivo para usuários autorizados.</p>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('loginForm');
+    const errorMsg = document.getElementById('errorMsg');
+    const loginBtn = document.getElementById('loginBtn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorMsg.style.display = 'none';
+      loginBtn.disabled = true;
+      loginBtn.textContent = 'Entrando...';
+
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          window.location.href = '/';
+        } else {
+          errorMsg.textContent = data.error || 'Usuário ou senha incorretos.';
+          errorMsg.style.display = 'block';
+        }
+      } catch (err) {
+        errorMsg.textContent = 'Erro de conexão com o servidor.';
+        errorMsg.style.display = 'block';
+      }
+
+      loginBtn.disabled = false;
+      loginBtn.textContent = 'Entrar';
+    });
+  </script>
+</body>
+</html>

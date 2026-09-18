@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WMPlayWeb - Filmes, Séries, Desenhos, Canais & Animes</title>
+  <link rel="icon" type="image/png" href="https://i.imgur.com/BfFiAAy.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- HLS.js para reprodução de streams .m3u8 no navegador -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <!-- Feather Icons -->
+  <script src="https://unpkg.com/feather-icons"></script>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <!-- Header / Barra de Navegação Superior -->
+  <header class="navbar">
+    <div class="nav-container">
+      <div class="brand">
+        <img src="https://i.imgur.com/kjtlfSP.png" alt="WMPlayWeb" class="brand-logo">
+        <div class="brand-text">
+          <span class="brand-title">WM<span class="highlight">PLAY</span></span>
+          <span class="brand-badge">WEB</span>
+        </div>
+      </div>
+
+      <nav class="nav-menu">
+        <button class="nav-item active" data-category="home"><i data-feather="home"></i> Início</button>
+        <button class="nav-item" data-category="channels"><i data-feather="tv"></i> Canais Ao Vivo</button>
+        <button class="nav-item" data-category="pluto"><i data-feather="play-circle"></i> Pluto TV</button>
+        <button class="nav-item" data-category="filmes"><i data-feather="video"></i> Filmes</button>
+        <button class="nav-item" data-category="series"><i data-feather="film"></i> Séries</button>
+        <button class="nav-item" data-category="animes"><i data-feather="video"></i> Animes</button>
+        <button class="nav-item" data-category="desenhos"><i data-feather="smile"></i> Desenhos</button>
+        <button class="nav-item" data-category="novelas"><i data-feather="book-open"></i> Novelas</button>
+        <button class="nav-item" data-category="doramas"><i data-feather="heart"></i> Doramas</button>
+      </nav>
+
+      <div class="nav-actions">
+        <div class="search-box">
+          <i data-feather="search" class="search-icon"></i>
+          <input type="text" id="searchInput" placeholder="Pesquisar títulos ou canais...">
+          <button id="clearSearchBtn" class="clear-btn" style="display:none;"><i data-feather="x"></i></button>
+        </div>
+        <button class="nav-item" id="logoutBtn" title="Sair" style="margin-left:8px; color:#ef4444;"><i data-feather="log-out"></i></button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Destaque / Hero Banner -->
+  <section class="hero-banner" id="heroBanner">
+    <div class="hero-backdrop" id="heroBackdrop"></div>
+    <div class="hero-overlay"></div>
+    <div class="hero-content">
+      <div class="hero-badges">
+        <span class="badge badge-gold" id="heroRating">★ 8.5</span>
+        <span class="badge badge-blue" id="heroYear">2024</span>
+        <span class="badge badge-purple" id="heroGenre">Ação, Aventura</span>
+      </div>
+      <h1 class="hero-title" id="heroTitle">Carregando catálogo WMPlayWeb...</h1>
+      <p class="hero-synopsis" id="heroSynopsis">Acesse centenas de canais ao vivo, filmes, séries, desenhos, novelas e animes diretamente pelo seu navegador, sem precisar instalar o Kodi.</p>
+      <div class="hero-actions">
+        <button class="btn btn-primary" id="heroPlayBtn"><i data-feather="play"></i> Assistir Agora</button>
+        <button class="btn btn-secondary" id="heroInfoBtn"><i data-feather="info"></i> Ver Detalhes</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Filtros Secundários de Canais / Categorias -->
+  <div class="subnav-container" id="subnavContainer" style="display: none;">
+    <div class="subnav-scroll" id="subnavPills"></div>
+  </div>
+
+  <!-- Área Principal de Conteúdo -->
+  <main class="main-container">
+    <!-- Estado de Carregamento -->
+    <div class="loading-state" id="loadingState">
+      <div class="spinner"></div>
+      <p>Sincronizando conteúdos do repositório WMPlayWeb...</p>
+    </div>
+
+    <!-- Título da Seção Ativa -->
+    <div class="section-header" id="sectionHeader">
+      <h2 id="sectionTitle">Conteúdos em Destaque</h2>
+      <span class="count-badge" id="sectionCount">0 itens</span>
+    </div>
+
+    <!-- Grade de Itens (Cards / Canais) -->
+    <div class="content-grid" id="contentGrid"></div>
+
+    <!-- Mensagem de Nenhum Resultado -->
+    <div class="empty-state" id="emptyState" style="display: none;">
+      <i data-feather="alert-circle"></i>
+      <h3>Nenhum conteúdo encontrado</h3>
+      <p>Tente usar outros termos de pesquisa ou selecionar outra categoria.</p>
+    </div>
+  </main>
+
+  <!-- Modal do Player de Vídeo -->
+  <div class="player-modal" id="playerModal">
+    <div class="player-container">
+      <div class="player-header">
+        <div class="player-info">
+          <span class="live-tag" id="playerLiveTag"><span class="pulse"></span> AO VIVO</span>
+          <h3 id="playerTitle">Reproduzindo Vídeo</h3>
+        </div>
+        <button class="close-player-btn" id="closePlayerBtn" title="Fechar Player"><i data-feather="x"></i></button>
+      </div>
+      
+      <div class="video-wrapper">
+        <video id="videoPlayer" controls autoplay playsinline></video>
+        <iframe id="embedPlayer" style="display:none; width:100%; height:100%; border:none;" allowfullscreen allow="autoplay; fullscreen"></iframe>
+        <div class="player-loading" id="playerLoading">
+          <div class="spinner"></div>
+          <span id="playerLoadingText">Carregando transmissão...</span>
+        </div>
+        <div class="player-error" id="playerError" style="display:none;">
+          <i data-feather="alert-triangle"></i>
+          <p id="playerErrorMsg">Não foi possível carregar o sinal deste canal ou vídeo.</p>
+          <button class="btn btn-primary btn-sm" id="retryStreamBtn"><i data-feather="refresh-cw"></i> Tentar Novamente</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Detalhes da Mídia -->
+  <div class="details-modal" id="detailsModal">
+    <div class="details-card">
+      <button class="close-modal-btn" id="closeDetailsBtn"><i data-feather="x"></i></button>
+      <div class="details-banner" id="detailsBanner">
+        <div class="details-banner-overlay"></div>
+      </div>
+      <div class="details-body">
+        <div class="details-meta">
+          <span class="badge badge-gold" id="modalRating">★ 8.0</span>
+          <span class="badge badge-blue" id="modalYear">2023</span>
+          <span class="badge badge-dark" id="modalCategory">Série</span>
+          <span class="badge badge-purple" id="modalGenre">Drama</span>
+        </div>
+        <h2 id="modalTitle">Título da Obra</h2>
+        <p class="modal-synopsis" id="modalSynopsis">Sinopse detalhada do conteúdo selecionado.</p>
+        <div class="modal-actions">
+          <button class="btn btn-primary" id="modalPlayBtn"><i data-feather="play"></i> Assistir Agora</button>
+        </div>
+
+        <!-- Seção de Temporadas e Episódios -->
+        <div class="seasons-section" id="seasonsSection">
+          <div class="seasons-header">
+            <div class="seasons-header-title">
+              <i data-feather="layers"></i>
+              <h3>Temporadas e Episódios</h3>
+            </div>
+            <span class="seasons-badge" id="seasonsCountBadge">0 Temporadas</span>
+          </div>
+          
+          <!-- Loading de Episódios -->
+          <div class="episodes-loading" id="episodesLoading">
+            <div class="spinner-sm"></div>
+            <span>Carregando lista de episódios...</span>
+          </div>
+
+          <!-- Seletor de Temporadas -->
+          <div class="season-pills" id="seasonPills"></div>
+
+          <!-- Grade de Episódios -->
+          <div class="episodes-grid" id="episodesGrid"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rodapé -->
+  <footer class="footer">
+    <div class="footer-content">
+      <div class="footer-brand">
+        <h3>WMPlayWeb</h3>
+        <p>Interface Web Standalone para streaming de filmes, séries, canais de TV e animes diretamente pelo seu navegador.</p>
+      </div>
+      <div class="footer-status">
+        <span class="status-indicator online"></span>
+        <span>Servidor Online & Conectado aos Repositórios</span>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p>&copy; 2026 WMPlayWeb. Criado para compatibilidade universal sem necessidade do Kodi.</p>
+    </div>
+  </footer>
+
+  <script src="/js/player.js"></script>
+  <script src="/js/app.js"></script>
+  <script>
+    feather.replace();
+  </script>
+</body>
+</html>
