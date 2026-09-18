@@ -14,12 +14,35 @@ app.use(express.json());
 const cookieParser = require('cookie-parser');
 app.use(cookieParser());
 
-// --- AUTHENTICATION ---
-const USERS = [
+// --- AUTHENTICATION & USERS STORAGE ---
+const USERS_FILE = path.join(__dirname, 'users.json');
+let USERS = [
   { username: 'admin', password: 'admin123' },
   { username: 'wmplay', password: 'wmplay2026' },
   { username: 'usuario', password: 'senha123' }
 ];
+
+function loadUsers() {
+  try {
+    if (fs.existsSync(USERS_FILE)) {
+      USERS = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+    } else {
+      fs.writeFileSync(USERS_FILE, JSON.stringify(USERS, null, 2), 'utf8');
+    }
+  } catch (e) {
+    console.error('Erro ao carregar users.json:', e.message);
+  }
+}
+loadUsers();
+
+function saveUsers() {
+  try {
+    fs.writeFileSync(USERS_FILE, JSON.stringify(USERS, null, 2), 'utf8');
+  } catch (e) {
+    console.error('Erro ao salvar users.json:', e.message);
+  }
+}
+
 const AUTH_SESSIONS = {};
 
 function generateSessionId() {
@@ -539,6 +562,7 @@ app.post('/api/auth/register', (req, res) => {
     return res.json({ success: false, error: 'Este nome de usuário já está cadastrado' });
   }
   USERS.push({ username: cleanUsername, password });
+  saveUsers();
   console.log(`[AUTH] Novo usuário registrado: ${cleanUsername}`);
   res.json({ success: true, message: 'Usuário registrado com sucesso!' });
 });
