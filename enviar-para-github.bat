@@ -12,15 +12,18 @@ if not exist %GIT_PATH% (
     set GIT_PATH=git
 )
 
+echo [*] Sincronizando com o GitHub...
+%GIT_PATH% pull origin main --no-edit
+
 echo [*] Preparando arquivos...
 %GIT_PATH% add .
 
-echo [*] Criando commit...
-%GIT_PATH% commit -m "WMPlayWeb: Versao completa com Filmes, Series, Canais e Auth"
+echo [*] Registrando alteracoes...
+%GIT_PATH% commit -m "WMPlayWeb: Atualizacao com pastas public e services" 2>nul
 
 echo.
-echo [*] Enviando para o GitHub (https://github.com/WMPLAYWEB/WMPLAYWEB)...
-echo [*] Se uma janela do navegador abrir, confirme o login do GitHub.
+echo [*] Enviando para https://github.com/WMPLAYWEB/WMPLAYWEB ...
+echo [*] Se uma janela do navegador abrir pedindo login no GitHub, confirme.
 echo.
 
 %GIT_PATH% push -u origin main
@@ -33,8 +36,9 @@ if %errorlevel% equ 0 (
     echo ======================================================
 ) else (
     echo ======================================================
-    echo  [AVISO] Se o envio falhou, certifique-se de que fez
-    echo  login no GitHub na tela que apareceu.
+    echo  [AVISO] Se o push foi rejeitado ou pediu permissao:
+    echo  Tentando enviar com sincronizacao forcada...
+    %GIT_PATH% push -u origin main --force
     echo ======================================================
 )
 
