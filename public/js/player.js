@@ -22,6 +22,19 @@ function playStream(url, title = 'Reproduzindo', isLive = false) {
     return;
   }
 
+  // Fecha imediatamente qualquer modal de detalhes aberto para evitar modais sobrepostos
+  const detailsModal = document.getElementById('detailsModal');
+  if (detailsModal) {
+    detailsModal.classList.remove('active');
+  }
+
+  // Se for canal com link legado chresolver1 em cache do navegador, resolve na hora
+  if (url && url.startsWith('chresolver1=')) {
+    const parts = url.replace('chresolver1=', '').split('#');
+    const chId = parts[0];
+    url = `/api/proxy/stream?url=${encodeURIComponent(`http://sixcine.store:80/live/468489339/355818635/${chId}.m3u8`)}&ua=XC-IPTV`;
+  }
+
   currentStreamUrl = url;
   currentStreamTitle = title;
   currentIsLive = isLive || url.includes('/api/proxy/stream') || url.includes('.m3u8');
@@ -46,8 +59,8 @@ function playStream(url, title = 'Reproduzindo', isLive = false) {
   videoElement.pause();
   videoElement.removeAttribute('src');
 
-  // CASO 1: É um Embed / Iframe explícito (Ex: Blogger / AnimesOnline / Embeds externos)
-  const isEmbed = url.includes('/embed') || url.includes('blogger.com') || url.includes('superembeds.com') || url.includes('embedrise.com');
+  // CASO 1: É um Embed / Iframe explícito (somente para provedores externos reais que não suportam HLS)
+  const isEmbed = !currentIsLive && !url.includes('/api/') && (url.includes('/embed') || url.includes('blogger.com') || url.includes('superembeds.com') || url.includes('embedrise.com'));
   if (isEmbed && embedPlayer) {
     videoElement.style.display = 'none';
     embedPlayer.style.display = 'block';
@@ -58,7 +71,7 @@ function playStream(url, title = 'Reproduzindo', isLive = false) {
     return;
   }
 
-  // Garante que o vídeo está visível e o iframe oculto
+  // Garante que o vídeo nativo está visível e o iframe 100% oculto
   if (embedPlayer) {
     embedPlayer.style.display = 'none';
     embedPlayer.src = 'about:blank';

@@ -792,6 +792,7 @@ app.get('/api/movies/:genre', async (req, res) => {
         continue;
       }
       const info = parseInfo(item.info);
+      const hasStreamSource = link.includes('resolver3_mv=') || link.includes('resolver2_mv=') || link.includes('.mp4') || link.includes('.m3u8');
       items.push({
         id: item.content_id || item.tmdb_id || Buffer.from(cleanTitle).toString('hex').slice(0, 12),
         title: cleanTitle,
@@ -803,9 +804,17 @@ app.get('/api/movies/:genre', async (req, res) => {
         year: info.year || item.tmdb_date || '',
         synopsis: info.synopsis || 'Sem sinopse disponível.',
         externalLink: link,
-        contentType: 'movie'
+        contentType: 'movie',
+        isAvailable: hasStreamSource
       });
     }
+    
+    // Prioriza filmes com fontes ativas de streaming disponíveis
+    items.sort((a, b) => {
+      if (a.isAvailable && !b.isAvailable) return -1;
+      if (!a.isAvailable && b.isAvailable) return 1;
+      return 0;
+    });
     
     brazucaCache[cacheKey] = { data: items, timestamp: Date.now() };
     res.json({ items });

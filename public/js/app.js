@@ -342,19 +342,24 @@ function renderMoviesGrid(items) {
   items.forEach(item => {
     const card = document.createElement('div');
     card.className = 'media-card';
+    const isCinemaOnly = item.isAvailable === false;
+    const badgeHtml = isCinemaOnly 
+      ? `<div class="media-rating" style="background:rgba(234,88,12,0.85); color:#fff; border:1px solid rgba(249,115,22,0.5);">🎬 CINEMA</div>`
+      : (item.rating ? `<div class="media-rating">★ ${item.rating}</div>` : `<div class="media-rating" style="background:rgba(34,197,94,0.85); color:#fff;">HD</div>`);
+
     card.innerHTML = `
       <div class="media-poster-box">
         <img src="${item.poster}" alt="${item.title}" class="media-poster" loading="lazy" onerror="this.src='https://image.tmdb.org/t/p/w300_and_h450_bestv2/3o7f2Xjwl5hcoiioR9eGdD9ezHt.jpg'">
-        ${item.rating ? `<div class="media-rating">★ ${item.rating}</div>` : ''}
+        ${badgeHtml}
         <div class="media-play-overlay">
-          <div class="play-circle"><i data-feather="play"></i></div>
+          <div class="play-circle"><i data-feather="${isCinemaOnly ? 'film' : 'play'}"></i></div>
         </div>
       </div>
       <div class="media-info">
         <h4 class="media-title">${item.title}</h4>
         <div class="media-sub">
           <span>${item.year || 'Filme'}</span>
-          <span>${item.genre ? item.genre.split(',')[0] : ''}</span>
+          <span>${item.genre ? item.genre.split(',')[0] : (isCinemaOnly ? 'Em Breve' : 'Filme')}</span>
         </div>
       </div>
     `;
@@ -378,10 +383,33 @@ async function openMovieDetailsModal(item) {
 
   if (seasonsSection) seasonsSection.style.display = 'none';
   
-  // Clear any existing alert in details modal
+  // Limpa alerta anterior
   const existingAlert = document.getElementById('movieModalAlert');
   if (existingAlert) existingAlert.remove();
 
+  const isCinemaOnly = item.isAvailable === false;
+  if (isCinemaOnly) {
+    modalPlayBtn.className = 'btn btn-secondary';
+    modalPlayBtn.innerHTML = '<i data-feather="film"></i> Em Breve nos Cinemas';
+    modalPlayBtn.disabled = true;
+    
+    const alertDiv = document.createElement('div');
+    alertDiv.id = 'movieModalAlert';
+    alertDiv.style.cssText = 'margin-top:16px; padding:14px 18px; border-radius:12px; background:rgba(234,88,12,0.15); border:1px solid rgba(249,115,22,0.35); color:#fdba74; font-size:0.9rem; line-height:1.5; display:flex; align-items:flex-start; gap:12px;';
+    alertDiv.innerHTML = `
+      <span style="font-size:1.3rem;">🎬</span>
+      <div>
+        <strong style="color:#fff;">Título em Exibição / Lançamento de Cinema (${item.year || '2026'})</strong><br>
+        Este filme ainda está em exibição nas salas de cinema e ainda não foi liberado pelas distribuidoras para transmissão digital. A versão em streaming estará disponível automaticamente assim que for lançada mundialmente. Aproveite os outros títulos disponíveis com selo <strong>HD</strong> ou navegue nas categorias como <em>Ação</em> e <em>Terror</em>!
+      </div>
+    `;
+    modalPlayBtn.parentNode.insertBefore(alertDiv, modalPlayBtn.nextSibling);
+    feather.replace();
+    detailsModal.classList.add('active');
+    return;
+  }
+
+  modalPlayBtn.className = 'btn btn-primary';
   modalPlayBtn.innerHTML = '<i data-feather="play"></i> Assistir Filme';
   modalPlayBtn.disabled = false;
   modalPlayBtn.onclick = async () => {
@@ -414,8 +442,8 @@ async function openMovieDetailsModal(item) {
         alertDiv.innerHTML = `
           <span style="font-size:1.2rem;">⚠️</span>
           <div>
-            <strong>Transmissão Temporariamente Indisponível</strong><br>
-            Este título ainda não foi disponibilizado pelas fontes de streaming ou é um lançamento de cinema futuro (${item.year || '2026'}). Por favor, escolha outro título do catálogo (ex: na categoria <em>Ação</em> ou <em>Terror</em>).
+            <strong>Fonte de Vídeo Temporariamente Ocupada</strong><br>
+            Não foi possível estabelecer conexão com o servidor de vídeo deste filme no momento. Por favor, tente novamente em instantes ou selecione outro filme do catálogo.
           </div>
         `;
         modalPlayBtn.parentNode.insertBefore(alertDiv, modalPlayBtn.nextSibling);
@@ -551,14 +579,22 @@ function updateHeroBanner(item) {
   heroBackdrop.style.backgroundImage = `url('${item.backdrop || item.poster}')`;
 
   heroPlayBtn.onclick = () => {
-    if (item.streamUrl) {
-      playStream(item.streamUrl, item.title);
+    if (item.category === 'filmes' || item.contentType === 'movie') {
+      openMovieDetailsModal(item);
+    } else if (item.streamUrl) {
+      playStream(item.streamUrl, item.title, true);
     } else {
       openDetailsModal(item);
     }
   };
 
-  heroInfoBtn.onclick = () => openDetailsModal(item);
+  heroInfoBtn.onclick = () => {
+    if (item.category === 'filmes' || item.contentType === 'movie') {
+      openMovieDetailsModal(item);
+    } else {
+      openDetailsModal(item);
+    }
+  };
 }
 
 async function openDetailsModal(item) {
