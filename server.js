@@ -49,37 +49,11 @@ function generateSessionId() {
   return Buffer.from(Date.now() + '-' + Math.random().toString(36).slice(2)).toString('hex');
 }
 
+// Autenticação desativada - acesso direto e aberto a todo o conteúdo
 function authMiddleware(req, res, next) {
-    // Skip auth for login, register pages and auth endpoints, and public API routes (movies)
-  if (req.path === '/login.html' || req.path === '/register.html' || req.path === '/api/auth/login' || req.path === '/api/auth/check' || req.path === '/api/auth/register' || req.path.startsWith('/api/movies') || req.path.startsWith('/api/movie')) {
-    return next();
-  }
-  if (req.path === '/login.html' || req.path === '/api/auth/login' || req.path === '/api/auth/check' || req.path.startsWith('/api/movies') || req.path.startsWith('/api/movie')) {
-    return next();
-  }
-  // Skip auth for static assets needed by login page or other public assets
-  if (req.path.match(/\.(css|js|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf)$/)) {
-    return next();
-  }
-  
-  const sessionId = req.cookies && req.cookies.wmplay_session;
-  if (sessionId && AUTH_SESSIONS[sessionId]) {
-    const session = AUTH_SESSIONS[sessionId];
-    if (Date.now() - session.createdAt < 24 * 60 * 60 * 1000) { // 24h expiry
-      req.user = session.user;
-      return next();
-    }
-    delete AUTH_SESSIONS[sessionId];
-  }
-  
-  // Not authenticated - redirect to login for HTML requests, 401 for API
-  if (req.path.startsWith('/api/')) {
-    return res.status(401).json({ error: 'Não autenticado' });
-  }
-  return res.redirect('/login.html');
+  return next();
 }
 
-app.use(authMiddleware);
 
 // ==========================================
 // 1. SERVICES EMBEDDED
@@ -637,14 +611,7 @@ app.post('/api/auth/register', (req, res) => {
 });
 
 app.get('/api/auth/check', (req, res) => {
-  const sessionId = req.cookies && req.cookies.wmplay_session;
-  if (sessionId && AUTH_SESSIONS[sessionId]) {
-    const session = AUTH_SESSIONS[sessionId];
-    if (Date.now() - session.createdAt < 24 * 60 * 60 * 1000) {
-      return res.json({ authenticated: true, user: session.user });
-    }
-  }
-  res.json({ authenticated: false });
+  res.json({ authenticated: true, user: 'visitante' });
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -753,74 +720,151 @@ app.get('/api/movies/genres', (req, res) => {
   res.json({ genres: Object.keys(MOVIE_GENRES).map(k => ({ key: k, name: k.charAt(0).toUpperCase() + k.slice(1).replace('cientifica', ' Científica').replace('cao', 'ção') })) });
 });
 
+async function getMovieGenreItems(genre) {
+  const xmlFile = MOVIE_GENRES[genre];
+  if (!xmlFile) return [];
+  
+  const cacheKey = 'movies_' + genre;
+  if (brazucaCache[cacheKey] && (Date.now() - brazucaCache[cacheKey].timestamp < CACHE_TTL)) {
+    return brazucaCache[cacheKey].data;
+  }
+  const disk = getDiskCache(cacheKey);
+  if (disk) {
+    brazucaCache[cacheKey] = { data: disk, timestamp: Date.now() };
+    return disk;
+  }
+  
+  const url = MOVIE_GIST_BASE + xmlFile;
+  const response = await axios.get(url, { timeout: 25000 });
+  const sanitized = response.data.replace(/&(?!amp;|lt;|gt;|quot;|apos;)/g, '&amp;');
+  const parsed = await parser.parseStringPromise(sanitized);
+  
+  const root = parsed.movies || parsed.channels || parsed;
+  let rawItems = [];
+  if (root.item) rawItems.push(...(Array.isArray(root.item) ? root.item : [root.item]));
+  if (root.channel) rawItems.push(...(Array.isArray(root.channel) ? root.channel : [root.channel]));
+  for (const key of Object.keys(root)) {
+    if (key.startsWith('page_') && root[key] && root[key].item) {
+      rawItems.push(...(Array.isArray(root[key].item) ? root[key].item : [root[key].item]));
+    }
+  }
+
+  const items = [];
+  for (const item of rawItems) {
+    const cleanTitle = cleanKodiText(item.name || item.title || '');
+    const link = item.externallink || item.link || '';
+    if (!cleanTitle || link === 'here' || cleanTitle.includes('PRÓXIMA PÁGINA') || cleanTitle.includes('|||') || !link) {
+      continue;
+    }
+    const info = parseInfo(item.info);
+    const hasStreamSource = link.includes('resolver3_mv=') || link.includes('resolver2_mv=') || link.includes('.mp4') || link.includes('.m3u8');
+    items.push({
+      id: item.content_id || item.tmdb_id || Buffer.from(cleanTitle).toString('hex').slice(0, 12),
+      title: cleanTitle,
+      category: 'filmes',
+      poster: item.thumbnail || 'https://image.tmdb.org/t/p/w300_and_h450_bestv2/3o7f2Xjwl5hcoiioR9eGdD9ezHt.jpg',
+      backdrop: item.fanart || item.thumbnail || 'https://image.tmdb.org/t/p/w1920_and_h1080_bestv2/vZsXfIDs3A8jzB46cdwusqxRjdI.jpg',
+      rating: info.rating || (item.tmdb_id ? '7.5' : ''),
+      genre: info.genre || genre.charAt(0).toUpperCase() + genre.slice(1),
+      year: info.year || item.tmdb_date || '',
+      synopsis: info.synopsis || 'Sem sinopse disponível.',
+      externalLink: link,
+      contentType: 'movie',
+      isAvailable: hasStreamSource
+    });
+  }
+  
+  // Prioriza filmes com fontes ativas de streaming disponíveis
+  items.sort((a, b) => {
+    if (a.isAvailable && !b.isAvailable) return -1;
+    if (!a.isAvailable && b.isAvailable) return 1;
+    return 0;
+  });
+  
+  setDiskCache(cacheKey, items);
+  brazucaCache[cacheKey] = { data: items, timestamp: Date.now() };
+  return items;
+}
+
 app.get('/api/movies/:genre', async (req, res) => {
   try {
     const genre = req.params.genre;
-    const xmlFile = MOVIE_GENRES[genre];
-    if (!xmlFile) return res.status(404).json({ error: 'Gênero não encontrado' });
-    
-    const cacheKey = 'movies_' + genre;
-    if (brazucaCache[cacheKey] && (Date.now() - brazucaCache[cacheKey].timestamp < CACHE_TTL)) {
-      return res.json({ items: brazucaCache[cacheKey].data });
-    }
-    const disk = getDiskCache(cacheKey);
-    if (disk) {
-      brazucaCache[cacheKey] = { data: disk, timestamp: Date.now() };
-      return res.json({ items: disk });
-    }
-    
-    const url = MOVIE_GIST_BASE + xmlFile;
-    const response = await axios.get(url, { timeout: 25000 });
-    const sanitized = response.data.replace(/&(?!amp;|lt;|gt;|quot;|apos;)/g, '&amp;');
-    const parsed = await parser.parseStringPromise(sanitized);
-    
-    const root = parsed.movies || parsed.channels || parsed;
-    let rawItems = [];
-    if (root.item) rawItems.push(...(Array.isArray(root.item) ? root.item : [root.item]));
-    if (root.channel) rawItems.push(...(Array.isArray(root.channel) ? root.channel : [root.channel]));
-    for (const key of Object.keys(root)) {
-      if (key.startsWith('page_') && root[key] && root[key].item) {
-        rawItems.push(...(Array.isArray(root[key].item) ? root[key].item : [root[key].item]));
-      }
-    }
-
-    const items = [];
-    for (const item of rawItems) {
-      const cleanTitle = cleanKodiText(item.name || item.title || '');
-      const link = item.externallink || item.link || '';
-      if (!cleanTitle || link === 'here' || cleanTitle.includes('PRÓXIMA PÁGINA') || cleanTitle.includes('|||') || !link) {
-        continue;
-      }
-      const info = parseInfo(item.info);
-      const hasStreamSource = link.includes('resolver3_mv=') || link.includes('resolver2_mv=') || link.includes('.mp4') || link.includes('.m3u8');
-      items.push({
-        id: item.content_id || item.tmdb_id || Buffer.from(cleanTitle).toString('hex').slice(0, 12),
-        title: cleanTitle,
-        category: 'filmes',
-        poster: item.thumbnail || 'https://image.tmdb.org/t/p/w300_and_h450_bestv2/3o7f2Xjwl5hcoiioR9eGdD9ezHt.jpg',
-        backdrop: item.fanart || item.thumbnail || 'https://image.tmdb.org/t/p/w1920_and_h1080_bestv2/vZsXfIDs3A8jzB46cdwusqxRjdI.jpg',
-        rating: info.rating || (item.tmdb_id ? '7.5' : ''),
-        genre: info.genre || genre.charAt(0).toUpperCase() + genre.slice(1),
-        year: info.year || item.tmdb_date || '',
-        synopsis: info.synopsis || 'Sem sinopse disponível.',
-        externalLink: link,
-        contentType: 'movie',
-        isAvailable: hasStreamSource
-      });
-    }
-    
-    // Prioriza filmes com fontes ativas de streaming disponíveis
-    items.sort((a, b) => {
-      if (a.isAvailable && !b.isAvailable) return -1;
-      if (!a.isAvailable && b.isAvailable) return 1;
-      return 0;
-    });
-    
-    brazucaCache[cacheKey] = { data: items, timestamp: Date.now() };
+    if (!MOVIE_GENRES[genre]) return res.status(404).json({ error: 'Gênero não encontrado' });
+    const items = await getMovieGenreItems(genre);
     res.json({ items });
   } catch (err) {
     console.error('Erro ao carregar filmes:', err.message);
     res.status(500).json({ error: 'Falha ao carregar catálogo de filmes', details: err.message });
+  }
+});
+
+// Endpoint de Busca Global Unificada (Canais, Filmes, Séries, Desenhos, Animes, etc.)
+app.get('/api/search', async (req, res) => {
+  try {
+    const rawQ = (req.query.q || '').trim();
+    if (!rawQ || rawQ.length < 2) {
+      return res.json({ success: true, count: 0, items: [] });
+    }
+    const q = rawQ.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const results = [];
+    const seenIds = new Set();
+
+    function addMatches(list, defaultCat, isMovie = false) {
+      if (!list || !Array.isArray(list)) return;
+      for (const item of list) {
+        if (!item) continue;
+        const id = item.id || item.title;
+        if (seenIds.has(id)) continue;
+        const rawTitle = (item.title || item.name || '');
+        const normTitle = rawTitle.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const normSynopsis = (item.synopsis || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const normGenre = (item.genre || item.category || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+        if (normTitle.includes(q) || normSynopsis.includes(q) || normGenre.includes(q)) {
+          seenIds.add(id);
+          results.push({
+            ...item,
+            category: isMovie ? 'filmes' : (item.category || defaultCat),
+            contentType: isMovie ? 'movie' : (item.contentType || defaultCat)
+          });
+          if (results.length >= 80) return;
+        }
+      }
+    }
+
+    // 1. Canais de TV
+    try {
+      const channelsObj = await getChannels();
+      for (const catName of Object.keys(channelsObj)) {
+        addMatches(channelsObj[catName], 'channels');
+        if (results.length >= 80) break;
+      }
+    } catch (e) {}
+
+    // 2. Filmes (gêneros mais populares primeiro)
+    const priorityMovieGenres = ['lancamentos', 'acao', 'animacao', 'comedia', 'terror', 'ficcaocientifica', 'aventura', 'drama', 'familia', 'suspense'];
+    for (const g of priorityMovieGenres) {
+      if (results.length >= 80) break;
+      try {
+        const mList = await getMovieGenreItems(g);
+        addMatches(mList, 'filmes', true);
+      } catch (e) {}
+    }
+
+    // 3. Séries, Animes, Desenhos, Doramas, Novelas
+    const catalogKeys = ['series', 'animes', 'desenhos', 'novelas', 'doramas'];
+    for (const catKey of catalogKeys) {
+      if (results.length >= 80) break;
+      try {
+        const catList = await getCatalog(catKey);
+        addMatches(catList, catKey, false);
+      } catch (e) {}
+    }
+
+    res.json({ success: true, count: results.length, items: results });
+  } catch (err) {
+    console.error('Erro na rota de busca:', err.message);
+    res.status(500).json({ success: false, error: 'Falha ao realizar busca', items: [] });
   }
 });
 

@@ -65,28 +65,35 @@ function setupNavigation() {
   detailsModal.addEventListener('click', (e) => {
     if (e.target === detailsModal) detailsModal.classList.remove('active');
   });
-
-  // Logout
-  const logoutBtn = document.getElementById('logoutBtn');
-  if (logoutBtn) {
-    logoutBtn.addEventListener('click', async () => {
-      await fetch('/api/auth/logout', { method: 'POST' });
-      window.location.href = '/login.html';
-    });
-  }
 }
 
 function setupSearch() {
+  let searchDebounce = null;
+
   searchInput.addEventListener('input', (e) => {
-    const term = e.target.value.trim().toLowerCase();
+    const term = e.target.value.trim();
     clearSearchBtn.style.display = term ? 'block' : 'none';
-    filterContent(term);
+
+    clearTimeout(searchDebounce);
+    if (!term) {
+      loadCategory(currentCategory);
+      return;
+    }
+
+    if (term.length < 2) {
+      filterLocalContent(term.toLowerCase());
+      return;
+    }
+
+    searchDebounce = setTimeout(() => {
+      executeGlobalSearch(term);
+    }, 300);
   });
 
   clearSearchBtn.addEventListener('click', () => {
     searchInput.value = '';
     clearSearchBtn.style.display = 'none';
-    filterContent('');
+    loadCategory(currentCategory);
   });
 }
 
@@ -381,7 +388,11 @@ async function openMovieDetailsModal(item) {
   modalGenre.textContent = item.genre || 'Geral';
   detailsBanner.style.backgroundImage = `url('${item.backdrop || item.poster}')`;
 
+  // Garante que a seção de temporadas NUNCA apareça em filmes
   if (seasonsSection) seasonsSection.style.display = 'none';
+  if (seasonPills) seasonPills.innerHTML = '';
+  if (episodesGrid) episodesGrid.innerHTML = '';
+  if (episodesLoading) episodesLoading.style.display = 'none';
   
   // Limpa alerta anterior
   const existingAlert = document.getElementById('movieModalAlert');
@@ -471,26 +482,44 @@ function renderMediaGrid(items) {
   emptyState.style.display = 'none';
 
   items.forEach(item => {
+    const isMovie = item.category === 'filmes' || item.contentType === 'movie';
+    const isCinemaOnly = isMovie && item.isAvailable === false;
+    
+    let badgeHtml = '';
+    if (isCinemaOnly) {
+      badgeHtml = `<div class="media-rating" style="background:rgba(234,88,12,0.85); color:#fff; border:1px solid rgba(249,115,22,0.5);">🎬 CINEMA</div>`;
+    } else if (isMovie && item.isAvailable) {
+      badgeHtml = `<div class="media-rating" style="background:rgba(34,197,94,0.85); color:#fff;">HD</div>`;
+    } else if (item.rating) {
+      badgeHtml = `<div class="media-rating">★ ${item.rating}</div>`;
+    }
+
     const card = document.createElement('div');
     card.className = 'media-card';
     card.innerHTML = `
       <div class="media-poster-box">
         <img src="${item.poster}" alt="${item.title}" class="media-poster" loading="lazy" onerror="this.src='https://image.tmdb.org/t/p/w300_and_h450_bestv2/3o7f2Xjwl5hcoiioR9eGdD9ezHt.jpg'">
-        ${item.rating ? `<div class="media-rating">★ ${item.rating}</div>` : ''}
+        ${badgeHtml}
         <div class="media-play-overlay">
-          <div class="play-circle"><i data-feather="play"></i></div>
+          <div class="play-circle"><i data-feather="${isCinemaOnly ? 'film' : 'play'}"></i></div>
         </div>
       </div>
       <div class="media-info">
         <h4 class="media-title">${item.title}</h4>
         <div class="media-sub">
-          <span>${item.year || item.category.toUpperCase()}</span>
-          <span>${item.genre ? item.genre.split(',')[0] : ''}</span>
+          <span>${item.year || (isMovie ? 'Filme' : (item.category || 'Mídia').toUpperCase())}</span>
+          <span>${item.genre ? item.genre.split(',')[0] : (isMovie ? 'Filme' : '')}</span>
         </div>
       </div>
     `;
 
-    card.addEventListener('click', () => openDetailsModal(item));
+    card.addEventListener('click', () => {
+      if (isMovie) {
+        openMovieDetailsModal(item);
+      } else {
+        openDetailsModal(item);
+      }
+    });
     contentGrid.appendChild(card);
   });
 
@@ -598,6 +627,20 @@ function updateHeroBanner(item) {
 }
 
 async function openDetailsModal(item) {
+  if (!item) return;
+
+  // Se for filme, nunca exibir temporadas e episódios: redirecionar imediatamente para o modal de filme
+  const isMovie = item.category === 'filmes' || 
+                  item.contentType === 'movie' || 
+                  (item.externalLink && (item.externalLink.includes('resolver3_mv') || item.externalLink.includes('resolver2_mv') || item.externalLink.includes('movie2=')));
+  if (isMovie) {
+    return openMovieDetailsModal(item);
+  }
+
+  // Limpa alerta anterior de filme se existir
+  const existingAlert = document.getElementById('movieModalAlert');
+  if (existingAlert) existingAlert.remove();
+
   activeModalItem = item;
   modalTitle.textContent = item.title;
   modalSynopsis.textContent = item.synopsis || 'Sem sinopse disponível no momento.';
@@ -761,10 +804,11 @@ async function playEpisode(item, ep, cardElement = null) {
   }
 }
 
-function filterContent(term) {
+function filterLocalContent(term) {
   if (!term) {
     if (currentCategory === 'channels') renderChannelsGrid(allItems);
     else if (currentCategory === 'pluto') renderPlutoGrid(allItems);
+    else if (currentCategory === 'filmes') renderMoviesGrid(allItems);
     else renderMediaGrid(allItems);
     return;
   }
@@ -780,5 +824,103 @@ function filterContent(term) {
 
   if (currentCategory === 'channels') renderChannelsGrid(filtered);
   else if (currentCategory === 'pluto') renderPlutoGrid(filtered);
+  else if (currentCategory === 'filmes') renderMoviesGrid(filtered);
   else renderMediaGrid(filtered);
+}
+
+async function executeGlobalSearch(term) {
+  loadingState.style.display = 'block';
+  contentGrid.innerHTML = '';
+  emptyState.style.display = 'none';
+  subnavContainer.style.display = 'none';
+  sectionTitle.textContent = `Resultados para "${term}"`;
+  sectionCount.textContent = 'Buscando em todo o catálogo...';
+
+  try {
+    const res = await fetch(`/api/search?q=${encodeURIComponent(term)}`);
+    const data = await res.json();
+    const items = data.items || [];
+
+    loadingState.style.display = 'none';
+    sectionCount.textContent = `${items.length} ${items.length === 1 ? 'resultado encontrado' : 'resultados encontrados'}`;
+
+    if (items.length === 0) {
+      emptyState.style.display = 'block';
+      return;
+    }
+
+    renderSearchResults(items);
+  } catch (err) {
+    console.error('Erro na busca global:', err);
+    loadingState.style.display = 'none';
+    filterLocalContent(term.toLowerCase());
+  }
+}
+
+function renderSearchResults(items) {
+  contentGrid.innerHTML = '';
+  emptyState.style.display = 'none';
+
+  items.forEach(item => {
+    const isLive = item.category === 'channels' || item.category === 'pluto' || item.streamUrl;
+    if (isLive) {
+      const card = document.createElement('div');
+      card.className = 'channel-card';
+      card.innerHTML = `
+        <div class="channel-logo-wrapper">
+          <img src="${item.thumbnail || item.logo || 'https://i.imgur.com/dRfcHTf.jpg'}" alt="${item.title || item.name}" class="channel-logo" loading="lazy" onerror="this.src='https://i.imgur.com/dRfcHTf.jpg'">
+        </div>
+        <h4 class="channel-title">${item.title || item.name}</h4>
+        <span class="channel-tag">${item.category || 'Ao Vivo'}</span>
+      `;
+      card.addEventListener('click', () => {
+        playStream(item.streamUrl, item.title || item.name, true);
+      });
+      contentGrid.appendChild(card);
+      return;
+    }
+
+    const isMovie = item.category === 'filmes' || item.contentType === 'movie';
+    const isCinemaOnly = isMovie && item.isAvailable === false;
+
+    let badgeHtml = '';
+    if (isCinemaOnly) {
+      badgeHtml = `<div class="media-rating" style="background:rgba(234,88,12,0.85); color:#fff; border:1px solid rgba(249,115,22,0.5);">🎬 CINEMA</div>`;
+    } else if (isMovie && item.isAvailable) {
+      badgeHtml = `<div class="media-rating" style="background:rgba(34,197,94,0.85); color:#fff;">HD</div>`;
+    } else if (item.rating) {
+      badgeHtml = `<div class="media-rating">★ ${item.rating}</div>`;
+    }
+
+    const card = document.createElement('div');
+    card.className = 'media-card';
+    card.innerHTML = `
+      <div class="media-poster-box">
+        <img src="${item.poster || 'https://image.tmdb.org/t/p/w300_and_h450_bestv2/3o7f2Xjwl5hcoiioR9eGdD9ezHt.jpg'}" alt="${item.title}" class="media-poster" loading="lazy" onerror="this.src='https://image.tmdb.org/t/p/w300_and_h450_bestv2/3o7f2Xjwl5hcoiioR9eGdD9ezHt.jpg'">
+        ${badgeHtml}
+        <div class="media-play-overlay">
+          <div class="play-circle"><i data-feather="${isCinemaOnly ? 'film' : 'play'}"></i></div>
+        </div>
+      </div>
+      <div class="media-info">
+        <h4 class="media-title">${item.title}</h4>
+        <div class="media-sub">
+          <span>${item.year || (isMovie ? 'Filme' : (item.category || 'Mídia').toUpperCase())}</span>
+          <span>${item.genre ? item.genre.split(',')[0] : (isMovie ? 'Filme' : (item.category || ''))}</span>
+        </div>
+      </div>
+    `;
+
+    card.addEventListener('click', () => {
+      if (isMovie) {
+        openMovieDetailsModal(item);
+      } else {
+        openDetailsModal(item);
+      }
+    });
+
+    contentGrid.appendChild(card);
+  });
+
+  feather.replace();
 }
