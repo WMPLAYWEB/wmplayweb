@@ -1,4 +1,4 @@
-// Gerenciador do Player de Vídeo (HLS, MP4 e Embed com Multi-Servidores)
+// Gerenciador do Player de Vídeo (HLS, MP4 e Embed com Multi-Servidores e Escudo Anti-Anúncios)
 let hlsInstance = null;
 const videoElement = document.getElementById('videoPlayer');
 const embedPlayer = document.getElementById('embedPlayer');
@@ -14,6 +14,25 @@ const playerLiveTag = document.getElementById('playerLiveTag');
 const playerServerControls = document.getElementById('playerServerControls');
 const playerServerSelect = document.getElementById('playerServerSelect');
 const playerAlternativeServers = document.getElementById('playerAlternativeServers');
+
+// --- ESCUDO ANTI-ANÚNCIOS & ANTI-POPUPS ---
+const _nativeWindowOpen = window.open;
+let isShieldActive = false;
+
+function activatePopupShield() {
+  if (isShieldActive) return;
+  isShieldActive = true;
+  window.open = function(url) {
+    console.warn('[WMPlayWeb Shield] Bloqueada tentativa de abertura de aba/anúncio:', url);
+    return null;
+  };
+}
+
+function deactivatePopupShield() {
+  if (!isShieldActive) return;
+  isShieldActive = false;
+  window.open = _nativeWindowOpen;
+}
 
 let currentStreamUrl = null;
 let currentStreamTitle = '';
@@ -126,33 +145,32 @@ function playStream(url, title = 'Reproduzindo', isLive = false) {
 
   // CASO 1: É um Embed / Iframe explícito (somente para provedores externos reais que não suportam HLS)
   const isEmbed = !currentIsLive && !url.includes('/api/') && (
-    url.includes('/embed') ||
-    url.includes('blogger.com') ||
-    url.includes('superembeds.com') ||
-    url.includes('embedrise.com') ||
-    url.includes('multiembed.mov') ||
-    url.includes('embedder.net') ||
     url.includes('vidlink.pro') ||
     url.includes('vidsrc') ||
     url.includes('autoembed') ||
+    url.includes('/embed') ||
+    url.includes('blogger.com') ||
+    url.includes('superembed') ||
     url.includes('player')
   );
 
   if (isEmbed && embedPlayer) {
+    activatePopupShield();
     videoElement.style.display = 'none';
     embedPlayer.style.display = 'block';
     embedPlayer.src = url;
-    embedPlayer.onload = () => {
-      playerLoading.style.display = 'none';
-    };
-    // Fallback caso onload não dispare
-    setTimeout(() => {
+    
+    // Oculta o loading rapidamente para que o usuário possa interagir com os controles nativos do player
+    const hideLoading = () => {
       if (playerLoading) playerLoading.style.display = 'none';
-    }, 2500);
+    };
+    embedPlayer.onload = hideLoading;
+    setTimeout(hideLoading, 1000);
     return;
   }
 
-  // Garante que o vídeo nativo está visível e o iframe 100% oculto
+  // Se for vídeo direto ou HLS, desativa o escudo e oculta o iframe
+  deactivatePopupShield();
   if (embedPlayer) {
     embedPlayer.style.display = 'none';
     embedPlayer.src = 'about:blank';
@@ -263,6 +281,7 @@ function showPlayerError(msg) {
 }
 
 function closePlayer() {
+  deactivatePopupShield();
   if (hlsInstance) {
     hlsInstance.destroy();
     hlsInstance = null;

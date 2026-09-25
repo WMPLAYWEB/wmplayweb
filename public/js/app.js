@@ -423,35 +423,35 @@ async function openMovieDetailsModal(item) {
   if (tmdbId) {
     servers.push({
       id: 'server2',
-      name: 'Servidor 2 (Dublado VIP)',
-      badge: 'Dublado PT-BR',
+      name: 'Servidor 2 (VidLink Pro HD)',
+      badge: '1080p Sem Anúncios',
       color: '#3b82f6',
       type: 'embed',
-      url: `https://embedrise.com/filme/${tmdbId}`
+      url: `https://vidlink.pro/movie/${tmdbId}?primaryColor=3b82f6&secondaryColor=1d4ed8&autoplay=true`
     });
     servers.push({
       id: 'server3',
-      name: 'Servidor 3 (Multi-Players)',
-      badge: 'Multi-Fontes',
+      name: 'Servidor 3 (VidSrc VIP)',
+      badge: 'Multi-Players',
       color: '#8b5cf6',
       type: 'embed',
-      url: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1`
+      url: `https://vidsrc.me/embed/movie?tmdb=${tmdbId}`
     });
     servers.push({
       id: 'server4',
-      name: 'Servidor 4 (VidLink Pro HD)',
-      badge: '1080p Ultra',
+      name: 'Servidor 4 (VidSrc TO)',
+      badge: 'Ultra Rápido',
       color: '#f59e0b',
       type: 'embed',
-      url: `https://vidlink.pro/movie/${tmdbId}`
+      url: `https://vidsrc.to/embed/movie/${tmdbId}`
     });
     servers.push({
       id: 'server5',
-      name: 'Servidor 5 (Backup Global)',
-      badge: 'Internacional',
-      color: '#64748b',
+      name: 'Servidor 5 (AutoEmbed Global)',
+      badge: 'Auto-Player',
+      color: '#06b6d4',
       type: 'embed',
-      url: `https://embedder.net/e/movie?tmdb=${tmdbId}`
+      url: `https://autoembed.co/movie/tmdb/${tmdbId}`
     });
   }
 
