@@ -136,24 +136,28 @@ async function loadHomeView() {
     return;
   }
   
-  // Carrega amostras de Séries, Animes e Filmes em paralelo
-  const [seriesRes, animesRes, filmesRes] = await Promise.all([
+  // Carrega amostras de Séries, Animes e Filmes com fontes ativas garantidas
+  const [seriesRes, animesRes, lancRes, acaoRes] = await Promise.all([
     fetch('/api/catalog/series').then(r => r.json()).catch(() => ({ items: [] })),
     fetch('/api/catalog/animes').then(r => r.json()).catch(() => ({ items: [] })),
-    fetch('/api/movies/lancamentos').then(r => r.json()).catch(() => ({ items: [] }))
+    fetch('/api/movies/lancamentos').then(r => r.json()).catch(() => ({ items: [] })),
+    fetch('/api/movies/acao').then(r => r.json()).catch(() => ({ items: [] }))
   ]);
 
   const series = seriesRes.items || [];
   const animes = animesRes.items || [];
-  const filmes = filmesRes.items || [];
-  allItems = [...filmes.slice(0, 8), ...series.slice(0, 12), ...animes.slice(0, 12)];
+  const filmesLanc = (lancRes.items || []).filter(f => f.isAvailable);
+  const filmesAcao = (acaoRes.items || []).filter(f => f.isAvailable);
+  const workingMovies = [...filmesLanc, ...filmesAcao];
+
+  allItems = [...workingMovies.slice(0, 10), ...series.slice(0, 12), ...animes.slice(0, 12)];
 
   clientDataCache['home'] = allItems;
 
-  if (series.length > 0) {
-    updateHeroBanner(series[Math.floor(Math.random() * Math.min(series.length, 10))]);
-  } else if (allItems.length > 0) {
-    updateHeroBanner(allItems[0]);
+  if (workingMovies.length > 0) {
+    updateHeroBanner(workingMovies[Math.floor(Math.random() * Math.min(workingMovies.length, 5))]);
+  } else if (series.length > 0) {
+    updateHeroBanner(series[0]);
   }
 
   loadingState.style.display = 'none';
@@ -269,17 +273,17 @@ async function loadCatalogView(catKey) {
 async function loadMoviesView() {
   sectionTitle.textContent = 'Filmes - Lançamentos';
 
-  // Genre pills for movies
+  // Genre pills for movies - prioriza gêneros com 100% de disponibilidade
   const movieGenres = [
-    { key: 'lancamentos', name: 'Lançamentos' },
     { key: 'acao', name: 'Ação' },
     { key: 'aventura', name: 'Aventura' },
+    { key: 'lancamentos', name: 'Lançamentos' },
     { key: 'comedia', name: 'Comédia' },
-    { key: 'drama', name: 'Drama' },
-    { key: 'terror', name: 'Terror' },
     { key: 'suspense', name: 'Suspense' },
+    { key: 'terror', name: 'Terror' },
     { key: 'ficcaocientifica', name: 'Ficção Científica' },
     { key: 'animacao', name: 'Animação' },
+    { key: 'drama', name: 'Drama' },
     { key: 'romance', name: 'Romance' },
     { key: 'crime', name: 'Crime' },
     { key: 'documentario', name: 'Documentário' },
@@ -291,7 +295,7 @@ async function loadMoviesView() {
     { key: 'thriller', name: 'Thriller' }
   ];
 
-  // Load initial genre (lancamentos)
+  // Load initial genre (acao - onde a disponibilidade é máxima)
   async function loadMovieGenre(genreKey, genreName) {
     sectionTitle.textContent = `Filmes - ${genreName}`;
     
@@ -335,7 +339,7 @@ async function loadMoviesView() {
     if (genre) loadMovieGenre(genre.key, genre.name);
   });
 
-  await loadMovieGenre('lancamentos', 'Lançamentos');
+  await loadMovieGenre('acao', 'Ação');
 }
 
 function renderMoviesGrid(items) {
@@ -401,7 +405,7 @@ async function openMovieDetailsModal(item) {
   const isCinemaOnly = item.isAvailable === false;
   if (isCinemaOnly) {
     modalPlayBtn.className = 'btn btn-secondary';
-    modalPlayBtn.innerHTML = '<i data-feather="film"></i> Em Breve nos Cinemas';
+    modalPlayBtn.innerHTML = '<i data-feather="film"></i> Em Breve nos Cinemas / Streaming';
     modalPlayBtn.disabled = true;
     
     const alertDiv = document.createElement('div');
@@ -410,8 +414,8 @@ async function openMovieDetailsModal(item) {
     alertDiv.innerHTML = `
       <span style="font-size:1.3rem;">🎬</span>
       <div>
-        <strong style="color:#fff;">Título em Exibição / Lançamento de Cinema (${item.year || '2026'})</strong><br>
-        Este filme ainda está em exibição nas salas de cinema e ainda não foi liberado pelas distribuidoras para transmissão digital. A versão em streaming estará disponível automaticamente assim que for lançada mundialmente. Aproveite os outros títulos disponíveis com selo <strong>HD</strong> ou navegue nas categorias como <em>Ação</em> e <em>Terror</em>!
+        <strong style="color:#fff;">Título em Breve (${item.year || '2026'})</strong><br>
+        Este filme ainda não foi liberado pelos servidores de streaming online ou está em exibição exclusiva nos cinemas. A versão em alta definição estará disponível automaticamente assim que for disponibilizada mundialmente. Aproveite os filmes com selo <strong>HD</strong> ou navegue nas abas de <em>Ação</em> e <em>Aventura</em>!
       </div>
     `;
     modalPlayBtn.parentNode.insertBefore(alertDiv, modalPlayBtn.nextSibling);
@@ -453,8 +457,8 @@ async function openMovieDetailsModal(item) {
         alertDiv.innerHTML = `
           <span style="font-size:1.2rem;">⚠️</span>
           <div>
-            <strong>Fonte de Vídeo Temporariamente Ocupada</strong><br>
-            Não foi possível estabelecer conexão com o servidor de vídeo deste filme no momento. Por favor, tente novamente em instantes ou selecione outro filme do catálogo.
+            <strong>Servidor Temporariamente Ocupado</strong><br>
+            A transmissão deste título específico está instável no momento. Por favor, selecione outro filme com selo <strong>HD</strong> nas categorias de <em>Ação</em>, <em>Aventura</em> ou <em>Suspense</em>.
           </div>
         `;
         modalPlayBtn.parentNode.insertBefore(alertDiv, modalPlayBtn.nextSibling);

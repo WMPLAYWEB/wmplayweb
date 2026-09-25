@@ -720,6 +720,30 @@ app.get('/api/movies/genres', (req, res) => {
   res.json({ genres: Object.keys(MOVIE_GENRES).map(k => ({ key: k, name: k.charAt(0).toUpperCase() + k.slice(1).replace('cientifica', ' Científica').replace('cao', 'ção') })) });
 });
 
+const movieAvailabilityCache = {};
+const movieStreamCache = {};
+
+async function checkMovieAvailability(slug) {
+  if (!slug) return false;
+  if (movieAvailabilityCache[slug] !== undefined) return movieAvailabilityCache[slug];
+  try {
+    const p = encodeURIComponent(Buffer.from(`{'resolver': 2, 'request': 'mvshows=${slug}'}`).toString('base64'));
+    const res = await axios.get(RESOLVER_API + p, { headers: { 'Authorization': 'Bearer ' + TOKEN }, timeout: 3500 });
+    if (res.data && res.data.result && res.data.result !== 'episode not found!' && res.data.result !== 'API Under Maintenance') {
+      movieAvailabilityCache[slug] = true;
+      let dec = res.data.result;
+      try { dec = Buffer.from(res.data.result, 'base64').toString('utf8'); } catch(e){}
+      const streamUrl = dec.split('|')[0];
+      if (streamUrl && (streamUrl.startsWith('http://') || streamUrl.startsWith('https://'))) {
+        movieStreamCache[slug] = { url: streamUrl, timestamp: Date.now() };
+      }
+      return true;
+    }
+  } catch(e){}
+  movieAvailabilityCache[slug] = false;
+  return false;
+}
+
 async function getMovieGenreItems(genre) {
   const xmlFile = MOVIE_GENRES[genre];
   if (!xmlFile) return [];
@@ -774,7 +798,23 @@ async function getMovieGenreItems(genre) {
     });
   }
   
-  // Prioriza filmes com fontes ativas de streaming disponíveis
+  // Realiza verificação rápida de disponibilidade dos títulos para que o topo tenha apenas filmes 100% funcionais
+  const verifyLimit = (genre === 'lancamentos') ? 120 : 40;
+  const toVerify = items.slice(0, verifyLimit);
+  for (let i = 0; i < toVerify.length; i += 15) {
+    const chunk = toVerify.slice(i, i + 15);
+    await Promise.all(chunk.map(async item => {
+      const match = item.externalLink.match(/resolver3_mv=([^|#&]+)/);
+      if (match) {
+        const slug = match[1].trim();
+        item.isAvailable = await checkMovieAvailability(slug);
+      } else if (!item.externalLink.includes('.mp4') && !item.externalLink.includes('.m3u8')) {
+        item.isAvailable = false;
+      }
+    }));
+  }
+
+  // Prioriza filmes com fontes ativas de streaming comprovadas
   items.sort((a, b) => {
     if (a.isAvailable && !b.isAvailable) return -1;
     if (!a.isAvailable && b.isAvailable) return 1;
@@ -868,8 +908,6 @@ app.get('/api/search', async (req, res) => {
   }
 });
 
-const movieStreamCache = {};
-
 app.get('/api/movie/stream', async (req, res) => {
   try {
     const { link, title } = req.query;
@@ -925,6 +963,14 @@ app.get('/api/movie/stream', async (req, res) => {
       if (withoutArticle && !slugs.includes(withoutArticle)) slugs.push(withoutArticle);
     }
     
+    // Retorna imediatamente se já verificado e em cache
+    for (const slug of slugs) {
+      if (movieStreamCache[slug] && movieStreamCache[slug].url) {
+        movieStreamCache[cacheKey] = movieStreamCache[slug];
+        return res.json({ success: true, streamUrl: movieStreamCache[slug].url });
+      }
+    }
+
     for (const slug of slugs) {
       for (const r of [2, 3]) {
         const result = await callGeekResolver(`{'resolver': ${r}, 'request': 'mvshows=${slug}'}`);
