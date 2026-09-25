@@ -240,6 +240,7 @@ async function getCatalog(categoryKey) {
     const info = parseInfo(item.info);
     items.push({
       id: item.content_id || item.tmdb_id || Buffer.from(cleanTitle).toString('hex').slice(0, 12),
+      tmdbId: item.tmdb_id || null,
       title: cleanTitle,
       originalTitle: item.tmdb_original_name || cleanTitle,
       category: categoryKey,
@@ -782,8 +783,10 @@ async function getMovieGenreItems(genre) {
     }
     const info = parseInfo(item.info);
     const hasStreamSource = link.includes('resolver3_mv=') || link.includes('resolver2_mv=') || link.includes('.mp4') || link.includes('.m3u8');
+    const tmdbId = (item.tmdb_id && /^\d+$/.test(item.tmdb_id)) ? item.tmdb_id : null;
     items.push({
       id: item.content_id || item.tmdb_id || Buffer.from(cleanTitle).toString('hex').slice(0, 12),
+      tmdbId: tmdbId,
       title: cleanTitle,
       category: 'filmes',
       poster: item.thumbnail || 'https://image.tmdb.org/t/p/w300_and_h450_bestv2/3o7f2Xjwl5hcoiioR9eGdD9ezHt.jpg',
@@ -794,12 +797,13 @@ async function getMovieGenreItems(genre) {
       synopsis: info.synopsis || 'Sem sinopse disponível.',
       externalLink: link,
       contentType: 'movie',
-      isAvailable: hasStreamSource
+      isAvailable: true,
+      hasDirectStream: hasStreamSource
     });
   }
   
-  // Realiza verificação rápida de disponibilidade dos títulos para que o topo tenha apenas filmes 100% funcionais
-  const verifyLimit = (genre === 'lancamentos') ? 120 : 40;
+  // Realiza verificação rápida de disponibilidade para priorizar no topo filmes com stream nativo comprovado
+  const verifyLimit = (genre === 'lancamentos') ? 60 : 30;
   const toVerify = items.slice(0, verifyLimit);
   for (let i = 0; i < toVerify.length; i += 15) {
     const chunk = toVerify.slice(i, i + 15);
@@ -807,17 +811,15 @@ async function getMovieGenreItems(genre) {
       const match = item.externalLink.match(/resolver3_mv=([^|#&]+)/);
       if (match) {
         const slug = match[1].trim();
-        item.isAvailable = await checkMovieAvailability(slug);
-      } else if (!item.externalLink.includes('.mp4') && !item.externalLink.includes('.m3u8')) {
-        item.isAvailable = false;
+        item.hasDirectStream = await checkMovieAvailability(slug);
       }
     }));
   }
 
-  // Prioriza filmes com fontes ativas de streaming comprovadas
+  // Prioriza filmes com stream nativo imediato comprovado
   items.sort((a, b) => {
-    if (a.isAvailable && !b.isAvailable) return -1;
-    if (!a.isAvailable && b.isAvailable) return 1;
+    if (a.hasDirectStream && !b.hasDirectStream) return -1;
+    if (!a.hasDirectStream && b.hasDirectStream) return 1;
     return 0;
   });
   
@@ -1002,6 +1004,55 @@ app.get('/api/movie/stream', async (req, res) => {
     console.error('Erro ao resolver filme:', err.message);
     res.json({ success: false, error: 'Falha ao resolver stream do filme' });
   }
+});
+
+// Provedores e Servidores Alternativos de Reprodução
+app.get('/api/movie/servers', (req, res) => {
+  const { tmdbId, link, title } = req.query;
+  const servers = [];
+  
+  if (link && link !== 'here') {
+    servers.push({
+      id: 'server1',
+      name: 'Servidor 1 (Stream Direto HD)',
+      badge: 'Nativo HD',
+      type: 'direct',
+      url: `/api/movie/stream?link=${encodeURIComponent(link)}&title=${encodeURIComponent(title || '')}`
+    });
+  }
+  
+  if (tmdbId && /^\d+$/.test(tmdbId)) {
+    servers.push({
+      id: 'server2',
+      name: 'Servidor 2 (Dublado VIP)',
+      badge: 'Dublado PT-BR',
+      type: 'embed',
+      url: `https://embedrise.com/filme/${tmdbId}`
+    });
+    servers.push({
+      id: 'server3',
+      name: 'Servidor 3 (Multi-Players)',
+      badge: 'Multi-Opções',
+      type: 'embed',
+      url: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1`
+    });
+    servers.push({
+      id: 'server4',
+      name: 'Servidor 4 (VidLink Pro HD)',
+      badge: '1080p Ultra',
+      type: 'embed',
+      url: `https://vidlink.pro/movie/${tmdbId}`
+    });
+    servers.push({
+      id: 'server5',
+      name: 'Servidor 5 (Backup Global)',
+      badge: 'Internacional',
+      type: 'embed',
+      url: `https://embedder.net/e/movie?tmdb=${tmdbId}`
+    });
+  }
+
+  res.json({ success: true, count: servers.length, servers });
 });
 
 app.use((req, res) => {

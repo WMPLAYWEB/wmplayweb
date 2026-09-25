@@ -1,4 +1,4 @@
-// Gerenciador do Player de Vídeo (HLS, MP4 e Embed)
+// Gerenciador do Player de Vídeo (HLS, MP4 e Embed com Multi-Servidores)
 let hlsInstance = null;
 const videoElement = document.getElementById('videoPlayer');
 const embedPlayer = document.getElementById('embedPlayer');
@@ -11,10 +11,74 @@ const playerErrorMsg = document.getElementById('playerErrorMsg');
 const retryStreamBtn = document.getElementById('retryStreamBtn');
 const closePlayerBtn = document.getElementById('closePlayerBtn');
 const playerLiveTag = document.getElementById('playerLiveTag');
+const playerServerControls = document.getElementById('playerServerControls');
+const playerServerSelect = document.getElementById('playerServerSelect');
+const playerAlternativeServers = document.getElementById('playerAlternativeServers');
 
 let currentStreamUrl = null;
 let currentStreamTitle = '';
 let currentIsLive = false;
+let currentActiveServers = [];
+let currentServerIndex = 0;
+
+function setupPlayerServers(servers, activeIndex = 0, title = '') {
+  currentActiveServers = servers || [];
+  currentServerIndex = activeIndex;
+  if (title) currentStreamTitle = title;
+  
+  if (!playerServerControls || !playerServerSelect) return;
+  
+  if (currentActiveServers.length > 1) {
+    playerServerControls.style.display = 'flex';
+    playerServerSelect.innerHTML = '';
+    currentActiveServers.forEach((srv, idx) => {
+      const opt = document.createElement('option');
+      opt.value = idx;
+      opt.textContent = srv.name;
+      if (idx === activeIndex) opt.selected = true;
+      playerServerSelect.appendChild(opt);
+    });
+  } else {
+    playerServerControls.style.display = 'none';
+  }
+}
+
+if (playerServerSelect) {
+  playerServerSelect.addEventListener('change', async (e) => {
+    const idx = parseInt(e.target.value, 10);
+    if (!isNaN(idx) && currentActiveServers[idx]) {
+      await switchToServer(idx);
+    }
+  });
+}
+
+async function switchToServer(index) {
+  currentServerIndex = index;
+  const srv = currentActiveServers[index];
+  if (!srv) return;
+  
+  if (playerServerSelect) playerServerSelect.value = index;
+  playerLoading.style.display = 'flex';
+  if (playerLoadingText) playerLoadingText.textContent = `Conectando ao ${srv.name}...`;
+  playerError.style.display = 'none';
+  if (playerAlternativeServers) playerAlternativeServers.style.display = 'none';
+  
+  if (srv.type === 'direct' && srv.url.startsWith('/api/movie/stream')) {
+    try {
+      const res = await fetch(srv.url);
+      const data = await res.json();
+      if (data.success && data.streamUrl) {
+        playStream(data.streamUrl, currentStreamTitle);
+      } else {
+        showPlayerError('Servidor 1 temporariamente indisponível.');
+      }
+    } catch (err) {
+      showPlayerError('Falha ao conectar com o Servidor 1.');
+    }
+  } else {
+    playStream(srv.url, currentStreamTitle);
+  }
+}
 
 function playStream(url, title = 'Reproduzindo', isLive = false) {
   if (!url) {
@@ -48,6 +112,7 @@ function playStream(url, title = 'Reproduzindo', isLive = false) {
   playerLoading.style.display = 'flex';
   if (playerLoadingText) playerLoadingText.textContent = 'Carregando vídeo...';
   playerError.style.display = 'none';
+  if (playerAlternativeServers) playerAlternativeServers.style.display = 'none';
 
   // Limpa instância HLS anterior se houver
   if (hlsInstance) {
@@ -60,7 +125,19 @@ function playStream(url, title = 'Reproduzindo', isLive = false) {
   videoElement.removeAttribute('src');
 
   // CASO 1: É um Embed / Iframe explícito (somente para provedores externos reais que não suportam HLS)
-  const isEmbed = !currentIsLive && !url.includes('/api/') && (url.includes('/embed') || url.includes('blogger.com') || url.includes('superembeds.com') || url.includes('embedrise.com'));
+  const isEmbed = !currentIsLive && !url.includes('/api/') && (
+    url.includes('/embed') ||
+    url.includes('blogger.com') ||
+    url.includes('superembeds.com') ||
+    url.includes('embedrise.com') ||
+    url.includes('multiembed.mov') ||
+    url.includes('embedder.net') ||
+    url.includes('vidlink.pro') ||
+    url.includes('vidsrc') ||
+    url.includes('autoembed') ||
+    url.includes('player')
+  );
+
   if (isEmbed && embedPlayer) {
     videoElement.style.display = 'none';
     embedPlayer.style.display = 'block';
@@ -68,6 +145,10 @@ function playStream(url, title = 'Reproduzindo', isLive = false) {
     embedPlayer.onload = () => {
       playerLoading.style.display = 'none';
     };
+    // Fallback caso onload não dispare
+    setTimeout(() => {
+      if (playerLoading) playerLoading.style.display = 'none';
+    }, 2500);
     return;
   }
 
@@ -158,6 +239,27 @@ function showPlayerError(msg) {
   playerLoading.style.display = 'none';
   playerError.style.display = 'flex';
   playerErrorMsg.textContent = msg;
+
+  if (playerAlternativeServers) {
+    if (currentActiveServers.length > 1) {
+      playerAlternativeServers.style.display = 'block';
+      playerAlternativeServers.innerHTML = `
+        <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 10px; padding: 12px; margin: 10px 0;">
+          <p style="font-size: 0.85rem; font-weight: 700; color: #93c5fd; margin-bottom: 8px;">
+            Tente outro servidor para continuar assistindo agora:
+          </p>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;">
+            ${currentActiveServers.map((srv, idx) => {
+              if (idx === currentServerIndex) return '';
+              return `<button class="btn btn-sm btn-primary" style="padding:6px 12px; border-radius:8px; font-size:0.8rem; cursor:pointer;" onclick="switchToServer(${idx})">▶ ${srv.name}</button>`;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    } else {
+      playerAlternativeServers.style.display = 'none';
+    }
+  }
 }
 
 function closePlayer() {
@@ -172,6 +274,9 @@ function closePlayer() {
     embedPlayer.src = 'about:blank';
     embedPlayer.style.display = 'none';
   }
+  if (playerServerControls) playerServerControls.style.display = 'none';
+  if (playerAlternativeServers) playerAlternativeServers.style.display = 'none';
+  currentActiveServers = [];
   playerModal.classList.remove('active');
 }
 

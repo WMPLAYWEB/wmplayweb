@@ -105,12 +105,19 @@
           <span class="live-tag" id="playerLiveTag"><span class="pulse"></span> AO VIVO</span>
           <h3 id="playerTitle">Reproduzindo Vídeo</h3>
         </div>
+        <div class="player-server-controls" id="playerServerControls" style="display:none; align-items:center; gap:8px; margin-left:auto; margin-right:12px;">
+          <span style="font-size:0.75rem; color:#94a3b8; font-weight:600; display:flex; align-items:center; gap:4px;">
+            <i data-feather="server" style="width:13px; height:13px; color:#38bdf8;"></i> Servidor:
+          </span>
+          <select id="playerServerSelect" style="background:#1e293b; color:#38bdf8; border:1px solid #334155; border-radius:8px; padding:4px 10px; font-size:0.8rem; font-weight:600; cursor:pointer; outline:none; transition:all 0.2s ease;">
+          </select>
+        </div>
         <button class="close-player-btn" id="closePlayerBtn" title="Fechar Player"><i data-feather="x"></i></button>
       </div>
       
       <div class="video-wrapper">
         <video id="videoPlayer" controls autoplay playsinline></video>
-        <iframe id="embedPlayer" style="display:none; width:100%; height:100%; border:none;" allowfullscreen allow="autoplay; fullscreen"></iframe>
+        <iframe id="embedPlayer" style="display:none; width:100%; height:100%; border:none;" allowfullscreen allow="autoplay; fullscreen; encrypted-media; picture-in-picture"></iframe>
         <div class="player-loading" id="playerLoading">
           <div class="spinner"></div>
           <span id="playerLoadingText">Carregando transmissão...</span>
@@ -118,6 +125,7 @@
         <div class="player-error" id="playerError" style="display:none;">
           <i data-feather="alert-triangle"></i>
           <p id="playerErrorMsg">Não foi possível carregar o sinal deste canal ou vídeo.</p>
+          <div id="playerAlternativeServers" style="display:none; width:100%; margin:12px 0;"></div>
           <button class="btn btn-primary btn-sm" id="retryStreamBtn"><i data-feather="refresh-cw"></i> Tentar Novamente</button>
         </div>
       </div>

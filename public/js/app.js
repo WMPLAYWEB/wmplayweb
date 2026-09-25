@@ -273,11 +273,11 @@ async function loadCatalogView(catKey) {
 async function loadMoviesView() {
   sectionTitle.textContent = 'Filmes - Lançamentos';
 
-  // Genre pills for movies - prioriza gêneros com 100% de disponibilidade
+  // Genre pills for movies
   const movieGenres = [
+    { key: 'lancamentos', name: 'Lançamentos' },
     { key: 'acao', name: 'Ação' },
     { key: 'aventura', name: 'Aventura' },
-    { key: 'lancamentos', name: 'Lançamentos' },
     { key: 'comedia', name: 'Comédia' },
     { key: 'suspense', name: 'Suspense' },
     { key: 'terror', name: 'Terror' },
@@ -295,7 +295,7 @@ async function loadMoviesView() {
     { key: 'thriller', name: 'Thriller' }
   ];
 
-  // Load initial genre (acao - onde a disponibilidade é máxima)
+  // Load initial genre (lancamentos com multi-servidores)
   async function loadMovieGenre(genreKey, genreName) {
     sectionTitle.textContent = `Filmes - ${genreName}`;
     
@@ -339,7 +339,7 @@ async function loadMoviesView() {
     if (genre) loadMovieGenre(genre.key, genre.name);
   });
 
-  await loadMovieGenre('acao', 'Ação');
+  await loadMovieGenre('lancamentos', 'Lançamentos');
 }
 
 function renderMoviesGrid(items) {
@@ -353,24 +353,23 @@ function renderMoviesGrid(items) {
   items.forEach(item => {
     const card = document.createElement('div');
     card.className = 'media-card';
-    const isCinemaOnly = item.isAvailable === false;
-    const badgeHtml = isCinemaOnly 
-      ? `<div class="media-rating" style="background:rgba(234,88,12,0.85); color:#fff; border:1px solid rgba(249,115,22,0.5);">🎬 CINEMA</div>`
-      : (item.rating ? `<div class="media-rating">★ ${item.rating}</div>` : `<div class="media-rating" style="background:rgba(34,197,94,0.85); color:#fff;">HD</div>`);
+    const badgeHtml = item.rating 
+      ? `<div class="media-rating">★ ${item.rating}</div>`
+      : `<div class="media-rating" style="background:rgba(34,197,94,0.85); color:#fff;">HD</div>`;
 
     card.innerHTML = `
       <div class="media-poster-box">
         <img src="${item.poster}" alt="${item.title}" class="media-poster" loading="lazy" onerror="this.src='https://image.tmdb.org/t/p/w300_and_h450_bestv2/3o7f2Xjwl5hcoiioR9eGdD9ezHt.jpg'">
         ${badgeHtml}
         <div class="media-play-overlay">
-          <div class="play-circle"><i data-feather="${isCinemaOnly ? 'film' : 'play'}"></i></div>
+          <div class="play-circle"><i data-feather="play"></i></div>
         </div>
       </div>
       <div class="media-info">
         <h4 class="media-title">${item.title}</h4>
         <div class="media-sub">
           <span>${item.year || 'Filme'}</span>
-          <span>${item.genre ? item.genre.split(',')[0] : (isCinemaOnly ? 'Em Breve' : 'Filme')}</span>
+          <span>${item.genre ? item.genre.split(',')[0] : 'Filme'}</span>
         </div>
       </div>
     `;
@@ -398,79 +397,195 @@ async function openMovieDetailsModal(item) {
   if (episodesGrid) episodesGrid.innerHTML = '';
   if (episodesLoading) episodesLoading.style.display = 'none';
   
-  // Limpa alerta anterior
+  // Limpa alerta e seletor de servidores anteriores
   const existingAlert = document.getElementById('movieModalAlert');
   if (existingAlert) existingAlert.remove();
+  const existingServerPicker = document.getElementById('movieModalServerPicker');
+  if (existingServerPicker) existingServerPicker.remove();
 
-  const isCinemaOnly = item.isAvailable === false;
-  if (isCinemaOnly) {
-    modalPlayBtn.className = 'btn btn-secondary';
-    modalPlayBtn.innerHTML = '<i data-feather="film"></i> Em Breve nos Cinemas / Streaming';
-    modalPlayBtn.disabled = true;
-    
+  // Determina TMDB ID
+  const tmdbId = item.tmdbId || (/^\d+$/.test(item.id) ? item.id : null);
+  const link = item.externalLink || '';
+
+  // Monta lista de servidores disponíveis
+  const servers = [];
+  if (link && link !== 'here') {
+    servers.push({
+      id: 'server1',
+      name: 'Servidor 1 (Stream Direto HD)',
+      badge: 'Nativo HD',
+      color: '#10b981',
+      type: 'direct',
+      url: `/api/movie/stream?link=${encodeURIComponent(link)}&title=${encodeURIComponent(item.title)}`
+    });
+  }
+
+  if (tmdbId) {
+    servers.push({
+      id: 'server2',
+      name: 'Servidor 2 (Dublado VIP)',
+      badge: 'Dublado PT-BR',
+      color: '#3b82f6',
+      type: 'embed',
+      url: `https://embedrise.com/filme/${tmdbId}`
+    });
+    servers.push({
+      id: 'server3',
+      name: 'Servidor 3 (Multi-Players)',
+      badge: 'Multi-Fontes',
+      color: '#8b5cf6',
+      type: 'embed',
+      url: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1`
+    });
+    servers.push({
+      id: 'server4',
+      name: 'Servidor 4 (VidLink Pro HD)',
+      badge: '1080p Ultra',
+      color: '#f59e0b',
+      type: 'embed',
+      url: `https://vidlink.pro/movie/${tmdbId}`
+    });
+    servers.push({
+      id: 'server5',
+      name: 'Servidor 5 (Backup Global)',
+      badge: 'Internacional',
+      color: '#64748b',
+      type: 'embed',
+      url: `https://embedder.net/e/movie?tmdb=${tmdbId}`
+    });
+  }
+
+  let selectedServerIndex = 0;
+
+  // Função para executar a reprodução de um servidor específico
+  async function launchMovieServer(srvIndex) {
+    const srv = servers[srvIndex];
+    if (!srv) return;
+
+    // Configura os servidores no player para troca dinâmica durante o filme
+    if (typeof setupPlayerServers === 'function') {
+      setupPlayerServers(servers, srvIndex, item.title);
+    }
+
+    if (srv.type === 'direct') {
+      modalPlayBtn.disabled = true;
+      modalPlayBtn.innerHTML = '<span class="spinner-sm" style="display:inline-block; vertical-align:middle; width:16px; height:16px; margin-right:8px;"></span> Conectando ao Servidor 1...';
+      
+      const oldAlert = document.getElementById('movieModalAlert');
+      if (oldAlert) oldAlert.remove();
+
+      try {
+        const res = await fetch(srv.url);
+        const data = await res.json();
+        modalPlayBtn.disabled = false;
+        modalPlayBtn.innerHTML = '<i data-feather="play"></i> Assistir Filme';
+        feather.replace();
+
+        if (data.success && data.streamUrl) {
+          detailsModal.classList.remove('active');
+          playStream(data.streamUrl, item.title);
+        } else {
+          showMovieAlternativeAlert(srvIndex);
+        }
+      } catch (err) {
+        modalPlayBtn.disabled = false;
+        modalPlayBtn.innerHTML = '<i data-feather="play"></i> Assistir Filme';
+        feather.replace();
+        showMovieAlternativeAlert(srvIndex);
+      }
+    } else {
+      // Embed alternativo (EmbedRise, MultiEmbed, Vidlink, Embedder)
+      detailsModal.classList.remove('active');
+      playStream(srv.url, item.title);
+    }
+  }
+
+  function showMovieAlternativeAlert(failedIndex) {
+    const oldAlert = document.getElementById('movieModalAlert');
+    if (oldAlert) oldAlert.remove();
+
     const alertDiv = document.createElement('div');
     alertDiv.id = 'movieModalAlert';
-    alertDiv.style.cssText = 'margin-top:16px; padding:14px 18px; border-radius:12px; background:rgba(234,88,12,0.15); border:1px solid rgba(249,115,22,0.35); color:#fdba74; font-size:0.9rem; line-height:1.5; display:flex; align-items:flex-start; gap:12px;';
+    alertDiv.style.cssText = 'margin-top:16px; padding:14px 18px; border-radius:12px; background:rgba(30, 41, 59, 0.95); border:1px solid rgba(59, 130, 246, 0.4); color:#e2e8f0; font-size:0.9rem; line-height:1.5;';
+    
+    const altButtons = servers
+      .map((s, idx) => {
+        if (idx === failedIndex) return '';
+        return `<button class="btn btn-sm" style="background:#2563eb; color:#fff; font-weight:600; padding:8px 14px; border-radius:8px; border:none; cursor:pointer; margin:4px; display:inline-flex; align-items:center; gap:6px;" onclick="window.launchSelectedMovieServer(${idx})">▶ Assistir via ${s.name}</button>`;
+      })
+      .filter(Boolean)
+      .join('');
+
     alertDiv.innerHTML = `
-      <span style="font-size:1.3rem;">🎬</span>
-      <div>
-        <strong style="color:#fff;">Título em Breve (${item.year || '2026'})</strong><br>
-        Este filme ainda não foi liberado pelos servidores de streaming online ou está em exibição exclusiva nos cinemas. A versão em alta definição estará disponível automaticamente assim que for disponibilizada mundialmente. Aproveite os filmes com selo <strong>HD</strong> ou navegue nas abas de <em>Ação</em> e <em>Aventura</em>!
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+        <span style="font-size:1.3rem;">⚡</span>
+        <strong style="color:#60a5fa; font-size:0.95rem;">Servidor 1 ocupado no momento. Escolha outro player para assistir:</strong>
+      </div>
+      <p style="margin-bottom:10px; color:#cbd5e1; font-size:0.85rem;">Os servidores abaixo estão online e prontos para reproduzir este filme imediatamente:</p>
+      <div style="display:flex; flex-wrap:wrap; gap:6px;">
+        ${altButtons}
       </div>
     `;
+
     modalPlayBtn.parentNode.insertBefore(alertDiv, modalPlayBtn.nextSibling);
-    feather.replace();
-    detailsModal.classList.add('active');
-    return;
+    if (window.feather) feather.replace();
   }
+
+  // Cria seletor de servidores no modal
+  if (servers.length > 1) {
+    const pickerDiv = document.createElement('div');
+    pickerDiv.id = 'movieModalServerPicker';
+    pickerDiv.style.cssText = 'margin-top:16px; margin-bottom:14px; padding:12px 14px; background:rgba(15, 23, 42, 0.75); border:1px solid rgba(59, 130, 246, 0.25); border-radius:12px;';
+    
+    let chipsHtml = servers.map((srv, idx) => {
+      const isSelected = idx === selectedServerIndex;
+      return `
+        <button type="button" class="movie-server-chip" data-index="${idx}" style="background:${isSelected ? '#2563eb' : '#1e293b'}; color:#fff; border:1px solid ${isSelected ? '#60a5fa' : '#334155'}; border-radius:8px; padding:7px 12px; font-size:0.82rem; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px; transition:all 0.2s ease;">
+          <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${srv.color || '#38bdf8'};"></span>
+          ${srv.name}
+        </button>
+      `;
+    }).join('');
+
+    pickerDiv.innerHTML = `
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+        <span style="font-size:0.8rem; font-weight:700; color:#93c5fd; text-transform:uppercase; letter-spacing:0.5px; display:flex; align-items:center; gap:5px;">
+          <i data-feather="server" style="width:13px; height:13px;"></i> Selecionar Servidor / Player:
+        </span>
+        <span style="font-size:0.75rem; color:#64748b;">${servers.length} Opções</span>
+      </div>
+      <div class="chips-container" style="display:flex; flex-wrap:wrap; gap:8px;">
+        ${chipsHtml}
+      </div>
+    `;
+
+    modalPlayBtn.parentNode.insertBefore(pickerDiv, modalPlayBtn);
+
+    // Eventos de clique nos chips
+    pickerDiv.querySelectorAll('.movie-server-chip').forEach(chip => {
+      chip.addEventListener('click', (e) => {
+        e.preventDefault();
+        const idx = parseInt(chip.getAttribute('data-index'), 10);
+        selectedServerIndex = idx;
+        pickerDiv.querySelectorAll('.movie-server-chip').forEach(c => {
+          c.style.background = '#1e293b';
+          c.style.borderColor = '#334155';
+        });
+        chip.style.background = '#2563eb';
+        chip.style.borderColor = '#60a5fa';
+        modalPlayBtn.innerHTML = `<i data-feather="play"></i> Assistir via ${servers[idx].name}`;
+        if (window.feather) feather.replace();
+      });
+    });
+  }
+
+  // Registra globalmente para cliques dentro de alertas
+  window.launchSelectedMovieServer = launchMovieServer;
 
   modalPlayBtn.className = 'btn btn-primary';
   modalPlayBtn.innerHTML = '<i data-feather="play"></i> Assistir Filme';
   modalPlayBtn.disabled = false;
-  modalPlayBtn.onclick = async () => {
-    // Show spinner inside button
-    modalPlayBtn.disabled = true;
-    modalPlayBtn.innerHTML = '<span class="spinner-sm" style="display:inline-block; vertical-align:middle; width:16px; height:16px; margin-right:8px;"></span> Conectando ao servidor...';
-    
-    // Clear old alert
-    const oldAlert = document.getElementById('movieModalAlert');
-    if (oldAlert) oldAlert.remove();
-    
-    try {
-      const link = item.externalLink || '';
-      const res = await fetch(`/api/movie/stream?link=${encodeURIComponent(link)}&title=${encodeURIComponent(item.title)}`);
-      const data = await res.json();
-      
-      if (data.success && data.streamUrl) {
-        modalPlayBtn.innerHTML = '<i data-feather="play"></i> Assistir Filme';
-        modalPlayBtn.disabled = false;
-        feather.replace();
-        detailsModal.classList.remove('active');
-        playStream(data.streamUrl, item.title);
-      } else {
-        modalPlayBtn.innerHTML = '<i data-feather="alert-circle"></i> Transmissão Indisponível';
-        modalPlayBtn.disabled = false;
-        
-        const alertDiv = document.createElement('div');
-        alertDiv.id = 'movieModalAlert';
-        alertDiv.style.cssText = 'margin-top:16px; padding:12px 16px; border-radius:12px; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); color:#fca5a5; font-size:0.88rem; line-height:1.4; display:flex; align-items:flex-start; gap:10px;';
-        alertDiv.innerHTML = `
-          <span style="font-size:1.2rem;">⚠️</span>
-          <div>
-            <strong>Servidor Temporariamente Ocupado</strong><br>
-            A transmissão deste título específico está instável no momento. Por favor, selecione outro filme com selo <strong>HD</strong> nas categorias de <em>Ação</em>, <em>Aventura</em> ou <em>Suspense</em>.
-          </div>
-        `;
-        modalPlayBtn.parentNode.insertBefore(alertDiv, modalPlayBtn.nextSibling);
-        feather.replace();
-      }
-    } catch (err) {
-      console.error('Erro ao reproduzir filme:', err);
-      modalPlayBtn.innerHTML = '<i data-feather="refresh-cw"></i> Tentar Novamente';
-      modalPlayBtn.disabled = false;
-      feather.replace();
-    }
-  };
+  modalPlayBtn.onclick = () => launchMovieServer(selectedServerIndex);
   
   feather.replace();
   detailsModal.classList.add('active');
