@@ -381,39 +381,45 @@ async function callGeekResolver(paramsStr) {
 }
 
 function extractCandidateSlugs(externalLink, mediaTitle) {
-  const candidates = new Set();
+  const candidates = [];
+  const added = new Set();
+
+  function addCandidate(s) {
+    if (!s) return;
+    s = s.split('#')[0].split('&')[0].trim();
+    if (s && s.length > 1 && !added.has(s)) {
+      added.add(s);
+      candidates.push(s);
+    }
+  }
+
+  // 1. Slugs explícitos do link da série (maior prioridade)
   if (externalLink) {
     const parts = externalLink.split('|');
     for (const part of parts) {
-      let s = null;
-      if (part.includes('resolver3_tvshows=')) s = part.split('resolver3_tvshows=')[1];
-      else if (part.includes('tvshows=')) s = part.split('tvshows=')[1];
-      else if (part.includes('serie3=')) s = part.split('serie3=')[1];
-      else if (!part.includes('=') && !part.includes('/') && part.length > 2) s = part;
-      if (s) {
-        s = s.split('#')[0].split('&')[0].trim();
-        const clean = s.replace(/-dublado-\d+/, '').replace(/-legendado-\d+/, '').replace(/-\d{4,}$/, '').trim();
-        if (clean) candidates.add(clean);
-        candidates.add(s);
+      if (part.includes('resolver3_tvshows=')) addCandidate(part.split('resolver3_tvshows=')[1]);
+      else if (part.includes('tvshows=')) addCandidate(part.split('tvshows=')[1]);
+      else if (part.includes('serie3=')) {
+        const raw = part.split('serie3=')[1];
+        const clean = raw.replace(/-dublado-\d+/, '').replace(/-legendado-\d+/, '').replace(/-\d{4,}$/, '').trim();
+        addCandidate(clean);
+        addCandidate(raw);
       }
     }
   }
+
+  // 2. Slug baseado no título da série
   if (mediaTitle) {
     const cleanTitle = mediaTitle.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    candidates.add(cleanTitle.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''));
+    addCandidate(cleanTitle.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''));
     const matchParen = cleanTitle.match(/^([^(]+)\(([^)]+)\)/);
     if (matchParen) {
-      candidates.add(matchParen[1].trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''));
-      candidates.add(matchParen[2].trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''));
+      addCandidate(matchParen[1].trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''));
+      addCandidate(matchParen[2].trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''));
     }
   }
-  return Array.from(candidates).filter(c => c && c.length > 1).sort((a, b) => {
-    const isBogusA = /\d{8,}/.test(a) || a.length > 25;
-    const isBogusB = /\d{8,}/.test(b) || b.length > 25;
-    if (isBogusA && !isBogusB) return 1;
-    if (!isBogusA && isBogusB) return -1;
-    return 0;
-  });
+
+  return candidates;
 }
 
 async function getSeasonsAndEpisodes(externalLink, mediaTitle) {
@@ -451,7 +457,11 @@ async function getSeasonsAndEpisodes(externalLink, mediaTitle) {
 
     if (seasonsResult.length === 0 && externalLink && externalLink.includes('resolver2_tvshows=')) {
       let r2Link = externalLink.split('resolver2_tvshows=')[1].split('|')[0].split('&')[0].trim();
-      if (!r2Link.includes('#')) r2Link = 'serie#' + r2Link;
+      if (r2Link.startsWith('serie#')) {
+        r2Link = 'series#' + r2Link.substring(6);
+      } else if (!r2Link.includes('#')) {
+        r2Link = 'series#' + r2Link;
+      }
       const r2Data = await callGeekResolver(`{'resolver': 2, 'request':'tvshows=${r2Link}'}`);
       if (Array.isArray(r2Data) && r2Data.length > 0) {
         for (const sItem of r2Data) {
@@ -522,7 +532,7 @@ async function resolveStreamUrl(streamId, type = 'resolver3') {
         streamUrl = await callGeekResolver(`{'resolver': 3, 'request': 'episodes=${streamId.replace('#Dublado', '#Nacional')}'}`);
       }
       if (streamUrl && typeof streamUrl === 'string' && (streamUrl.startsWith('http://') || streamUrl.startsWith('https://'))) {
-        return streamUrl;
+        return streamUrl.split('|')[0];
       }
     }
     if (streamId.startsWith('http://') || streamId.startsWith('https://')) {
@@ -533,7 +543,7 @@ async function resolveStreamUrl(streamId, type = 'resolver3') {
           if (m && m[1]) return m[1];
         } catch (e) {}
       }
-      return streamId;
+      return streamId.split('|')[0];
     }
     return null;
   } catch (err) {
@@ -956,6 +966,7 @@ app.get('/api/movie/servers', (req, res) => {
       id: 'server1',
       name: 'Servidor 1 (Stream Direto HD)',
       badge: 'Nativo HD',
+      color: '#10b981',
       type: 'direct',
       url: `/api/movie/stream?link=${encodeURIComponent(link)}&title=${encodeURIComponent(title || '')}`
     });
@@ -966,29 +977,136 @@ app.get('/api/movie/servers', (req, res) => {
       id: 'server2',
       name: 'Servidor 2 (VidLink Pro HD)',
       badge: '1080p Sem Anúncios',
+      color: '#3b82f6',
       type: 'embed',
       url: `https://vidlink.pro/movie/${tmdbId}?primaryColor=3b82f6&secondaryColor=1d4ed8&autoplay=true`
     });
     servers.push({
       id: 'server3',
-      name: 'Servidor 3 (VidSrc VIP)',
-      badge: 'Multi-Players',
+      name: 'Servidor 3 (MultiEmbed VIP)',
+      badge: 'Multi-Players / Dublado',
+      color: '#8b5cf6',
+      type: 'embed',
+      url: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1`
+    });
+    servers.push({
+      id: 'server4',
+      name: 'Servidor 4 (Embedder BR)',
+      badge: 'Nacional Dublado',
+      color: '#10b981',
+      type: 'embed',
+      url: `https://embedder.net/e/movie?tmdb=${tmdbId}`
+    });
+    servers.push({
+      id: 'server5',
+      name: 'Servidor 5 (VidSrc VIP)',
+      badge: 'Multi-Idiomas',
+      color: '#ec4899',
       type: 'embed',
       url: `https://vidsrc.me/embed/movie?tmdb=${tmdbId}`
     });
     servers.push({
-      id: 'server4',
-      name: 'Servidor 4 (VidSrc TO)',
+      id: 'server6',
+      name: 'Servidor 6 (VidSrc TO)',
       badge: 'Ultra Rápido',
+      color: '#f59e0b',
       type: 'embed',
       url: `https://vidsrc.to/embed/movie/${tmdbId}`
     });
     servers.push({
-      id: 'server5',
-      name: 'Servidor 5 (AutoEmbed Global)',
+      id: 'server7',
+      name: 'Servidor 7 (AutoEmbed Global)',
       badge: 'Auto-Player',
+      color: '#06b6d4',
       type: 'embed',
       url: `https://autoembed.co/movie/tmdb/${tmdbId}`
+    });
+    servers.push({
+      id: 'server8',
+      name: 'Servidor 8 (2Embed Ultra)',
+      badge: 'Player Rápido',
+      color: '#6366f1',
+      type: 'embed',
+      url: `https://www.2embed.cc/embed/${tmdbId}`
+    });
+  }
+
+  res.json({ success: true, count: servers.length, servers });
+});
+
+app.get('/api/series/servers', (req, res) => {
+  const { tmdbId, streamId, type, season, episode, title } = req.query;
+  const servers = [];
+  const sNum = parseInt(season || 1, 10) || 1;
+  const epNum = parseInt(episode || 1, 10) || 1;
+
+  if (streamId) {
+    servers.push({
+      id: 'server1',
+      name: 'Servidor 1 (Stream Direto HD)',
+      badge: 'Nativo HD',
+      color: '#10b981',
+      type: 'direct',
+      url: `/api/episode/stream?streamId=${encodeURIComponent(streamId)}&type=${encodeURIComponent(type || 'resolver3')}`
+    });
+  }
+
+  if (tmdbId && /^\d+$/.test(tmdbId)) {
+    servers.push({
+      id: 'server2',
+      name: 'Servidor 2 (VidLink Pro HD)',
+      badge: '1080p Sem Anúncios',
+      color: '#3b82f6',
+      type: 'embed',
+      url: `https://vidlink.pro/tv/${tmdbId}/${sNum}/${epNum}?primaryColor=3b82f6&secondaryColor=1d4ed8&autoplay=true`
+    });
+    servers.push({
+      id: 'server3',
+      name: 'Servidor 3 (MultiEmbed VIP)',
+      badge: 'Multi-Players / Dublado',
+      color: '#8b5cf6',
+      type: 'embed',
+      url: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1&s=${sNum}&e=${epNum}`
+    });
+    servers.push({
+      id: 'server4',
+      name: 'Servidor 4 (Embedder BR)',
+      badge: 'Nacional Dublado',
+      color: '#10b981',
+      type: 'embed',
+      url: `https://embedder.net/e/series?tmdb=${tmdbId}&sea=${sNum}&epi=${epNum}`
+    });
+    servers.push({
+      id: 'server5',
+      name: 'Servidor 5 (VidSrc VIP)',
+      badge: 'Multi-Idiomas',
+      color: '#ec4899',
+      type: 'embed',
+      url: `https://vidsrc.me/embed/tv?tmdb=${tmdbId}&season=${sNum}&episode=${epNum}`
+    });
+    servers.push({
+      id: 'server6',
+      name: 'Servidor 6 (VidSrc TO)',
+      badge: 'Ultra Rápido',
+      color: '#f59e0b',
+      type: 'embed',
+      url: `https://vidsrc.to/embed/tv/${tmdbId}/${sNum}/${epNum}`
+    });
+    servers.push({
+      id: 'server7',
+      name: 'Servidor 7 (AutoEmbed Global)',
+      badge: 'Auto-Player',
+      color: '#06b6d4',
+      type: 'embed',
+      url: `https://autoembed.co/tv/tmdb/${tmdbId}-${sNum}-${epNum}`
+    });
+    servers.push({
+      id: 'server8',
+      name: 'Servidor 8 (2Embed Ultra)',
+      badge: 'Player Rápido',
+      color: '#6366f1',
+      type: 'embed',
+      url: `https://www.2embed.cc/embedtv/${tmdbId}&s=${sNum}&e=${epNum}`
     });
   }
 

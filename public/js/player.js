@@ -82,24 +82,25 @@ async function switchToServer(index) {
   playerError.style.display = 'none';
   if (playerAlternativeServers) playerAlternativeServers.style.display = 'none';
   
-  if (srv.type === 'direct' && srv.url.startsWith('/api/movie/stream')) {
+  if (srv.type === 'direct' && srv.url && srv.url.startsWith('/api/')) {
     try {
       const res = await fetch(srv.url);
       const data = await res.json();
       if (data.success && data.streamUrl) {
-        playStream(data.streamUrl, currentStreamTitle);
+        playStream(data.streamUrl, currentStreamTitle, false, false);
       } else {
-        showPlayerError('Servidor 1 temporariamente indisponível.');
+        showPlayerError('Servidor 1 ocupado no momento. Escolha outro player abaixo:');
       }
     } catch (err) {
-      showPlayerError('Falha ao conectar com o Servidor 1.');
+      showPlayerError('Falha ao conectar com o Servidor 1. Escolha outro player abaixo:');
     }
   } else {
-    playStream(srv.url, currentStreamTitle);
+    playStream(srv.url, currentStreamTitle, false, srv.type === 'embed');
   }
 }
+window.switchToServer = switchToServer;
 
-function playStream(url, title = 'Reproduzindo', isLive = false) {
+function playStream(url, title = 'Reproduzindo', isLive = false, explicitIsEmbed = null) {
   if (!url) {
     showPlayerError('Link de reprodução indisponível para este item.');
     return;
@@ -143,16 +144,15 @@ function playStream(url, title = 'Reproduzindo', isLive = false) {
   videoElement.pause();
   videoElement.removeAttribute('src');
 
-  // CASO 1: É um Embed / Iframe explícito (somente para provedores externos reais que não suportam HLS)
-  const isEmbed = !currentIsLive && !url.includes('/api/') && (
-    url.includes('vidlink.pro') ||
-    url.includes('vidsrc') ||
-    url.includes('autoembed') ||
-    url.includes('/embed') ||
-    url.includes('blogger.com') ||
-    url.includes('superembed') ||
-    url.includes('player')
-  );
+  // Identifica se a URL é um Embed / Iframe ou stream direto de vídeo
+  const isVideoDirect = url.includes('.mp4') || 
+                        url.includes('.m3u8') || 
+                        url.includes('.webm') || 
+                        url.includes('wasabisys.com') || 
+                        url.includes('apperror404.com') || 
+                        url.includes('/api/proxy/stream');
+
+  const isEmbed = (explicitIsEmbed === true) || (!currentIsLive && !isVideoDirect && !url.startsWith('/api/'));
 
   if (isEmbed && embedPlayer) {
     activatePopupShield();
@@ -165,7 +165,7 @@ function playStream(url, title = 'Reproduzindo', isLive = false) {
       if (playerLoading) playerLoading.style.display = 'none';
     };
     embedPlayer.onload = hideLoading;
-    setTimeout(hideLoading, 1000);
+    setTimeout(hideLoading, 1200);
     return;
   }
 
@@ -177,8 +177,8 @@ function playStream(url, title = 'Reproduzindo', isLive = false) {
   }
   videoElement.style.display = 'block';
 
-  // CASO 2: É um arquivo MP4 direto (Ex: Wasabi S3 de Séries / Episódios)
-  const isMp4 = url.includes('.mp4') || url.includes('wasabisys.com');
+  // CASO 2: É um arquivo MP4 direto (Wasabi S3, Apperror404, etc.)
+  const isMp4 = url.includes('.mp4') || url.includes('wasabisys.com') || url.includes('apperror404.com');
   if (isMp4) {
     videoElement.src = url;
     
@@ -193,7 +193,7 @@ function playStream(url, title = 'Reproduzindo', isLive = false) {
     videoElement.addEventListener('loadeddata', onCanPlay);
 
     videoElement.onerror = () => {
-      showPlayerError('Não foi possível carregar o arquivo de vídeo deste episódio.');
+      showPlayerError('Não foi possível carregar o arquivo de vídeo deste episódio no Servidor 1.');
     };
     return;
   }
@@ -262,14 +262,14 @@ function showPlayerError(msg) {
     if (currentActiveServers.length > 1) {
       playerAlternativeServers.style.display = 'block';
       playerAlternativeServers.innerHTML = `
-        <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 10px; padding: 12px; margin: 10px 0;">
-          <p style="font-size: 0.85rem; font-weight: 700; color: #93c5fd; margin-bottom: 8px;">
-            Tente outro servidor para continuar assistindo agora:
+        <div style="background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(59, 130, 246, 0.35); border-radius: 12px; padding: 14px; margin: 12px 0;">
+          <p style="font-size: 0.88rem; font-weight: 700; color: #93c5fd; margin-bottom: 10px;">
+            ⚡ Escolha outro servidor abaixo para continuar assistindo agora:
           </p>
           <div style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;">
             ${currentActiveServers.map((srv, idx) => {
               if (idx === currentServerIndex) return '';
-              return `<button class="btn btn-sm btn-primary" style="padding:6px 12px; border-radius:8px; font-size:0.8rem; cursor:pointer;" onclick="switchToServer(${idx})">▶ ${srv.name}</button>`;
+              return `<button class="btn btn-sm btn-primary" style="padding:8px 14px; border-radius:8px; font-size:0.82rem; cursor:pointer;" onclick="window.switchToServer(${idx})">▶ ${srv.name}</button>`;
             }).join('')}
           </div>
         </div>
