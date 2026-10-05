@@ -802,27 +802,6 @@ async function getMovieGenreItems(genre) {
     });
   }
   
-  // Realiza verificação rápida de disponibilidade para priorizar no topo filmes com stream nativo comprovado
-  const verifyLimit = (genre === 'lancamentos') ? 60 : 30;
-  const toVerify = items.slice(0, verifyLimit);
-  for (let i = 0; i < toVerify.length; i += 15) {
-    const chunk = toVerify.slice(i, i + 15);
-    await Promise.all(chunk.map(async item => {
-      const match = item.externalLink.match(/resolver3_mv=([^|#&]+)/);
-      if (match) {
-        const slug = match[1].trim();
-        item.hasDirectStream = await checkMovieAvailability(slug);
-      }
-    }));
-  }
-
-  // Prioriza filmes com stream nativo imediato comprovado
-  items.sort((a, b) => {
-    if (a.hasDirectStream && !b.hasDirectStream) return -1;
-    if (!a.hasDirectStream && b.hasDirectStream) return 1;
-    return 0;
-  });
-  
   setDiskCache(cacheKey, items);
   brazucaCache[cacheKey] = { data: items, timestamp: Date.now() };
   return items;
@@ -920,12 +899,13 @@ app.get('/api/movie/stream', async (req, res) => {
       return res.json({ success: true, streamUrl: movieStreamCache[cacheKey].url });
     }
     
+    // Extrai unicamente os slugs explícitos deste filme específico
     const slugs = [];
     const rawLink = link || '';
 
-    // Extract all regex matches of resolver3_mv=, resolver2_mv=, movie2=, tvshows=
-    const allMatches = [...rawLink.matchAll(/(?:resolver[12345]_mv|movie2|serie3|tvshows)=([^|#&]+)/g)];
-    for (const m of allMatches) {
+    // 1. Slugs diretos das tags do filme (resolver3_mv=, resolver2_mv=, movie2=)
+    const mvMatches = [...rawLink.matchAll(/(?:resolver[12345]_mv|movie2)=([^|#&]+)/g)];
+    for (const m of mvMatches) {
       const raw = m[1].trim();
       if (raw && !slugs.includes(raw)) slugs.push(raw);
       const clean = raw
@@ -940,39 +920,14 @@ app.get('/api/movie/stream', async (req, res) => {
       if (clean && clean.length > 2 && !slugs.includes(clean)) slugs.push(clean);
     }
 
-    // Also extract from pipe separated segments
-    const parts = rawLink.split('|');
-    for (const part of parts) {
-      if (part.includes('=')) {
-        const val = part.split('=').pop().split('#')[0].split('&')[0].trim();
-        const clean = val
-          .replace(/-dublado-\d+/gi, '')
-          .replace(/-legendado-\d+/gi, '')
-          .replace(/-imagem-de-cinema/gi, '')
-          .replace(/-\d{4,}$/g, '')
-          .trim();
-        if (clean && clean.length > 2 && !slugs.includes(clean)) slugs.push(clean);
-        if (val && val.length > 2 && !slugs.includes(val)) slugs.push(val);
-      }
-    }
-
-    // Generate slugs from title if provided
-    if (title) {
+    // 2. Slug baseado exclusivamente no título exato do filme (se fornecido e nenhum slug foi encontrado)
+    if (title && slugs.length === 0) {
       const cleanTitle = title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       const sTitle = cleanTitle.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-      if (sTitle && !slugs.includes(sTitle)) slugs.push(sTitle);
-      const withoutArticle = sTitle.replace(/^(o|a|os|as)-/, '');
-      if (withoutArticle && !slugs.includes(withoutArticle)) slugs.push(withoutArticle);
-    }
-    
-    // Retorna imediatamente se já verificado e em cache
-    for (const slug of slugs) {
-      if (movieStreamCache[slug] && movieStreamCache[slug].url) {
-        movieStreamCache[cacheKey] = movieStreamCache[slug];
-        return res.json({ success: true, streamUrl: movieStreamCache[slug].url });
-      }
+      if (sTitle && sTitle.length > 2) slugs.push(sTitle);
     }
 
+    // Consulta apenas o resolver de filmes (mvshows) para garantir que NUNCA toque em episódios de séries
     for (const slug of slugs) {
       for (const r of [2, 3]) {
         const result = await callGeekResolver(`{'resolver': ${r}, 'request': 'mvshows=${slug}'}`);
@@ -982,24 +937,9 @@ app.get('/api/movie/stream', async (req, res) => {
           return res.json({ success: true, streamUrl: cleanUrl });
         }
       }
-      
-      const tvResult = await callGeekResolver(`{'resolver': 3, 'request': 'tvshows=${slug}'}`);
-      if (tvResult && typeof tvResult === 'object' && Object.keys(tvResult).length > 0) {
-        const firstSeason = Object.keys(tvResult)[0];
-        const episodes = tvResult[firstSeason]?.episodes || {};
-        const firstEpNum = Object.keys(episodes)[0];
-        if (firstEpNum) {
-          const streamUrl = await callGeekResolver(`{'resolver': 3, 'request': 'episodes=${slug}#${firstSeason}#${firstEpNum}#Dublado'}`);
-          if (streamUrl && typeof streamUrl === 'string' && (streamUrl.startsWith('http://') || streamUrl.startsWith('https://'))) {
-            const cleanUrl = streamUrl.split('|')[0];
-            movieStreamCache[cacheKey] = { url: cleanUrl, timestamp: Date.now() };
-            return res.json({ success: true, streamUrl: cleanUrl });
-          }
-        }
-      }
     }
     
-    res.json({ success: false, error: 'Não foi possível resolver o stream deste filme no momento' });
+    res.json({ success: false, error: 'Stream direto não disponível para este filme no Servidor 1' });
   } catch (err) {
     console.error('Erro ao resolver filme:', err.message);
     res.json({ success: false, error: 'Falha ao resolver stream do filme' });
