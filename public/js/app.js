@@ -271,15 +271,15 @@ async function loadCatalogView(catKey) {
 
 // 5. CARREGAR FILMES
 async function loadMoviesView() {
-  sectionTitle.textContent = 'Filmes - Lançamentos';
+  sectionTitle.textContent = 'Filmes - Ação';
 
-  // Genre pills for movies
+  // Genre pills for movies (Ação e Aventura têm >90% de streams diretos nativos ativos)
   const movieGenres = [
-    { key: 'lancamentos', name: 'Lançamentos' },
     { key: 'acao', name: 'Ação' },
     { key: 'aventura', name: 'Aventura' },
-    { key: 'comedia', name: 'Comédia' },
     { key: 'suspense', name: 'Suspense' },
+    { key: 'comedia', name: 'Comédia' },
+    { key: 'lancamentos', name: 'Lançamentos' },
     { key: 'terror', name: 'Terror' },
     { key: 'ficcaocientifica', name: 'Ficção Científica' },
     { key: 'animacao', name: 'Animação' },
@@ -295,7 +295,7 @@ async function loadMoviesView() {
     { key: 'thriller', name: 'Thriller' }
   ];
 
-  // Load initial genre (lancamentos com multi-servidores)
+  // Load initial genre (ação com alta disponibilidade de streams)
   async function loadMovieGenre(genreKey, genreName) {
     sectionTitle.textContent = `Filmes - ${genreName}`;
     
@@ -339,7 +339,7 @@ async function loadMoviesView() {
     if (genre) loadMovieGenre(genre.key, genre.name);
   });
 
-  await loadMovieGenre('lancamentos', 'Lançamentos');
+  await loadMovieGenre('acao', 'Ação');
 }
 
 function renderMoviesGrid(items) {
@@ -417,13 +417,15 @@ async function openMovieDetailsModal(item) {
         detailsModal.classList.remove('active');
         playStream(data.streamUrl, item.title);
       } else {
-        alert(data.error || 'Vídeo temporariamente indisponível no momento.');
+        detailsModal.classList.remove('active');
+        showPlayerError(data.error || 'A transmissão deste título específico está instável no momento. Por favor, tente outro filme do catálogo.');
       }
     } catch (err) {
       modalPlayBtn.disabled = false;
       modalPlayBtn.innerHTML = '<i data-feather="play"></i> Assistir Filme';
       feather.replace();
-      alert('Falha ao conectar com o servidor.');
+      detailsModal.classList.remove('active');
+      showPlayerError('Falha ao conectar com o servidor.');
     }
   };
 

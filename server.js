@@ -909,18 +909,27 @@ app.get('/api/movie/stream', async (req, res) => {
       return res.json({ success: true, streamUrl: movieStreamCache[cacheKey].url });
     }
     
-    // Extrai unicamente os slugs explícitos deste filme específico
-    const slugs = [];
     const rawLink = link || '';
 
-    // 1. Slugs diretos das tags do filme (resolver3_mv=, resolver2_mv=, movie2=)
-    const mvMatches = [...rawLink.matchAll(/(?:resolver[12345]_mv|movie2)=([^|#&]+)/g)];
+    // Se o link já for uma URL direta
+    if (rawLink.startsWith('http://') || rawLink.startsWith('https://')) {
+      const cleanUrl = rawLink.split('|')[0].trim();
+      movieStreamCache[cacheKey] = { url: cleanUrl, timestamp: Date.now() };
+      return res.json({ success: true, streamUrl: cleanUrl });
+    }
+
+    // Extrai unicamente os slugs deste filme
+    const slugs = [];
+
+    // 1. Slugs diretos das tags do filme (resolver3_mv=, resolver2_mv=, movie2=, mvshows=)
+    const mvMatches = [...rawLink.matchAll(/(?:resolver[12345]_mv|movie2|mvshows)=([^|#&]+)/g)];
     for (const m of mvMatches) {
       const raw = m[1].trim();
       if (raw && !slugs.includes(raw)) slugs.push(raw);
       const clean = raw
         .replace(/-dublado-\d+/gi, '')
         .replace(/-legendado-\d+/gi, '')
+        .replace(/-nacional-\d+/gi, '')
         .replace(/-imagem-de-cinema/gi, '')
         .replace(/-cinema/gi, '')
         .replace(/-cam/gi, '')
@@ -930,14 +939,14 @@ app.get('/api/movie/stream', async (req, res) => {
       if (clean && clean.length > 2 && !slugs.includes(clean)) slugs.push(clean);
     }
 
-    // 2. Slug baseado exclusivamente no título exato do filme (se fornecido e nenhum slug foi encontrado)
-    if (title && slugs.length === 0) {
+    // 2. Slug baseado exclusivamente no título exato do filme
+    if (title) {
       const cleanTitle = title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       const sTitle = cleanTitle.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-      if (sTitle && sTitle.length > 2) slugs.push(sTitle);
+      if (sTitle && sTitle.length > 2 && !slugs.includes(sTitle)) slugs.push(sTitle);
     }
 
-    // Consulta apenas o resolver de filmes (mvshows) para garantir que NUNCA toque em episódios de séries
+    // Consulta os resolvers de filmes (resolver 2 primeiro pois tem maior taxa de sucesso, depois resolver 3)
     for (const slug of slugs) {
       for (const r of [2, 3]) {
         const result = await callGeekResolver(`{'resolver': ${r}, 'request': 'mvshows=${slug}'}`);
@@ -949,18 +958,21 @@ app.get('/api/movie/stream', async (req, res) => {
       }
     }
     
-    res.json({ success: false, error: 'Stream direto não disponível para este filme no Servidor 1' });
+    res.json({ 
+      success: false, 
+      error: 'A transmissão deste título específico está instável no momento. Por favor, selecione outro filme com selo HD nas categorias de Ação, Aventura ou Suspense.' 
+    });
   } catch (err) {
     console.error('Erro ao resolver filme:', err.message);
     res.json({ success: false, error: 'Falha ao resolver stream do filme' });
   }
 });
 
-
-
 app.use((req, res) => {
   if (hasPublicDir) {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(__dirname, 'public', 'index.html'), (err) => {
+      if (err && !res.headersSent) res.status(404).end();
+    });
   } else {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(EMBEDDED_HTML);
