@@ -136,26 +136,23 @@ async function loadHomeView() {
     return;
   }
   
-  // Carrega amostras de Séries, Animes e Filmes com fontes ativas garantidas
-  const [seriesRes, animesRes, lancRes, acaoRes] = await Promise.all([
+  // Carrega destaques de Filmes (Lançamentos), Séries e Animes
+  const [seriesRes, animesRes, lancRes] = await Promise.all([
     fetch('/api/catalog/series').then(r => r.json()).catch(() => ({ items: [] })),
     fetch('/api/catalog/animes').then(r => r.json()).catch(() => ({ items: [] })),
-    fetch('/api/movies/lancamentos').then(r => r.json()).catch(() => ({ items: [] })),
-    fetch('/api/movies/acao').then(r => r.json()).catch(() => ({ items: [] }))
+    fetch('/api/movies/lancamentos').then(r => r.json()).catch(() => ({ items: [] }))
   ]);
 
   const series = seriesRes.items || [];
   const animes = animesRes.items || [];
-  const filmesLanc = (lancRes.items || []).filter(f => f.isAvailable);
-  const filmesAcao = (acaoRes.items || []).filter(f => f.isAvailable);
-  const workingMovies = [...filmesLanc, ...filmesAcao];
+  const filmes = lancRes.items || [];
 
-  allItems = [...workingMovies.slice(0, 10), ...series.slice(0, 12), ...animes.slice(0, 12)];
+  allItems = [...filmes.slice(0, 10), ...series.slice(0, 12), ...animes.slice(0, 12)];
 
   clientDataCache['home'] = allItems;
 
-  if (workingMovies.length > 0) {
-    updateHeroBanner(workingMovies[Math.floor(Math.random() * Math.min(workingMovies.length, 5))]);
+  if (filmes.length > 0) {
+    updateHeroBanner(filmes[0]);
   } else if (series.length > 0) {
     updateHeroBanner(series[0]);
   }
@@ -271,15 +268,15 @@ async function loadCatalogView(catKey) {
 
 // 5. CARREGAR FILMES
 async function loadMoviesView() {
-  sectionTitle.textContent = 'Filmes - Ação';
+  sectionTitle.textContent = 'Filmes - Lançamentos';
 
-  // Genre pills for movies (Ação e Aventura têm >90% de streams diretos nativos ativos)
+  // Genre pills for movies
   const movieGenres = [
+    { key: 'lancamentos', name: 'Lançamentos' },
     { key: 'acao', name: 'Ação' },
     { key: 'aventura', name: 'Aventura' },
-    { key: 'suspense', name: 'Suspense' },
     { key: 'comedia', name: 'Comédia' },
-    { key: 'lancamentos', name: 'Lançamentos' },
+    { key: 'suspense', name: 'Suspense' },
     { key: 'terror', name: 'Terror' },
     { key: 'ficcaocientifica', name: 'Ficção Científica' },
     { key: 'animacao', name: 'Animação' },
@@ -295,7 +292,7 @@ async function loadMoviesView() {
     { key: 'thriller', name: 'Thriller' }
   ];
 
-  // Load initial genre (ação com alta disponibilidade de streams)
+  // Load initial genre (lancamentos)
   async function loadMovieGenre(genreKey, genreName) {
     sectionTitle.textContent = `Filmes - ${genreName}`;
     
@@ -339,7 +336,7 @@ async function loadMoviesView() {
     if (genre) loadMovieGenre(genre.key, genre.name);
   });
 
-  await loadMovieGenre('acao', 'Ação');
+  await loadMovieGenre('lancamentos', 'Lançamentos');
 }
 
 function renderMoviesGrid(items) {
@@ -401,31 +398,21 @@ async function openMovieDetailsModal(item) {
   modalPlayBtn.innerHTML = '<i data-feather="play"></i> Assistir Filme';
   modalPlayBtn.disabled = false;
   modalPlayBtn.onclick = async () => {
-    modalPlayBtn.disabled = true;
-    modalPlayBtn.innerHTML = '<span class="spinner-sm" style="display:inline-block; vertical-align:middle; width:16px; height:16px; margin-right:8px;"></span> Conectando ao vídeo...';
+    // Abre o reprodutor nativo imediatamente com animação de carregamento
+    openPlayerLoading(item.title);
 
     try {
       const link = item.externalLink || '';
       const res = await fetch(`/api/movie/stream?link=${encodeURIComponent(link)}&title=${encodeURIComponent(item.title)}`);
       const data = await res.json();
 
-      modalPlayBtn.disabled = false;
-      modalPlayBtn.innerHTML = '<i data-feather="play"></i> Assistir Filme';
-      feather.replace();
-
       if (data.success && data.streamUrl) {
-        detailsModal.classList.remove('active');
         playStream(data.streamUrl, item.title);
       } else {
-        detailsModal.classList.remove('active');
-        showPlayerError(data.error || 'A transmissão deste título específico está instável no momento. Por favor, tente outro filme do catálogo.');
+        showPlayerError(data.error || 'A transmissão deste título específico está indisponível no momento. Por favor, tente outro filme do catálogo.', item.title);
       }
     } catch (err) {
-      modalPlayBtn.disabled = false;
-      modalPlayBtn.innerHTML = '<i data-feather="play"></i> Assistir Filme';
-      feather.replace();
-      detailsModal.classList.remove('active');
-      showPlayerError('Falha ao conectar com o servidor.');
+      showPlayerError('Falha ao conectar com o servidor.', item.title);
     }
   };
 
@@ -749,19 +736,18 @@ async function playEpisode(item, ep, cardElement = null) {
   }
 
   const episodeTitle = `${item.title} - ${ep.title || `Episódio ${ep.number}`}`;
-  playStream(null, episodeTitle);
+  openPlayerLoading(episodeTitle);
 
   try {
     const res = await fetch(`/api/episode/stream?streamId=${encodeURIComponent(ep.streamId || '')}&type=${encodeURIComponent(ep.type || 'resolver3')}`);
     const data = await res.json();
     if (data.success && data.streamUrl) {
-      detailsModal.classList.remove('active');
       playStream(data.streamUrl, episodeTitle);
     } else {
-      showPlayerError(data.error || 'Não foi possível reproduzir este episódio no momento.');
+      showPlayerError(data.error || 'Não foi possível reproduzir este episódio no momento.', episodeTitle);
     }
   } catch (err) {
-    showPlayerError('Falha ao conectar com o servidor do episódio.');
+    showPlayerError('Falha ao conectar com o servidor do episódio.', episodeTitle);
   }
 }
 

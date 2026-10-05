@@ -911,56 +911,54 @@ app.get('/api/movie/stream', async (req, res) => {
     
     const rawLink = link || '';
 
-    // Se o link já for uma URL direta
+    // 1. Se o link já for uma URL direta
     if (rawLink.startsWith('http://') || rawLink.startsWith('https://')) {
       const cleanUrl = rawLink.split('|')[0].trim();
       movieStreamCache[cacheKey] = { url: cleanUrl, timestamp: Date.now() };
       return res.json({ success: true, streamUrl: cleanUrl });
     }
 
-    // Extrai unicamente os slugs deste filme
-    const slugs = [];
-
-    // 1. Slugs diretos das tags do filme (resolver3_mv=, resolver2_mv=, movie2=, mvshows=)
-    const mvMatches = [...rawLink.matchAll(/(?:resolver[12345]_mv|movie2|mvshows)=([^|#&]+)/g)];
-    for (const m of mvMatches) {
-      const raw = m[1].trim();
-      if (raw && !slugs.includes(raw)) slugs.push(raw);
-      const clean = raw
-        .replace(/-dublado-\d+/gi, '')
-        .replace(/-legendado-\d+/gi, '')
-        .replace(/-nacional-\d+/gi, '')
-        .replace(/-imagem-de-cinema/gi, '')
-        .replace(/-cinema/gi, '')
-        .replace(/-cam/gi, '')
-        .replace(/-ts/gi, '')
-        .replace(/-\d{4,}$/g, '')
-        .trim();
-      if (clean && clean.length > 2 && !slugs.includes(clean)) slugs.push(clean);
-    }
-
-    // 2. Slug baseado exclusivamente no título exato do filme
-    if (title) {
-      const cleanTitle = title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      const sTitle = cleanTitle.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-      if (sTitle && sTitle.length > 2 && !slugs.includes(sTitle)) slugs.push(sTitle);
-    }
-
-    // Consulta os resolvers de filmes (resolver 2 primeiro pois tem maior taxa de sucesso, depois resolver 3)
-    for (const slug of slugs) {
-      for (const r of [2, 3]) {
-        const result = await callGeekResolver(`{'resolver': ${r}, 'request': 'mvshows=${slug}'}`);
-        if (result && typeof result === 'string' && (result.startsWith('http://') || result.startsWith('https://'))) {
-          const cleanUrl = result.split('|')[0];
-          movieStreamCache[cacheKey] = { url: cleanUrl, timestamp: Date.now() };
-          return res.json({ success: true, streamUrl: cleanUrl });
-        }
+    // 2. Extração estrita de tags do provedor original
+    // Tag movie2=SLUG (ex: movie2=10dance-legendado-65134) -> USA APENAS RESOLVER 2 COM O SLUG EXATO (COM O ID)
+    const movie2Match = rawLink.match(/movie2=([^|#&]+)/);
+    if (movie2Match && movie2Match[1]) {
+      const exactSlug = movie2Match[1].trim();
+      const result = await callGeekResolver(`{'resolver': 2, 'request': 'mvshows=${exactSlug}'}`);
+      if (result && typeof result === 'string' && (result.startsWith('http://') || result.startsWith('https://'))) {
+        const cleanUrl = result.split('|')[0];
+        movieStreamCache[cacheKey] = { url: cleanUrl, timestamp: Date.now() };
+        return res.json({ success: true, streamUrl: cleanUrl });
       }
     }
-    
+
+    // Tag resolver3_mv=SLUG (ex: resolver3_mv=10dance) -> USA APENAS RESOLVER 3 COM O SLUG EXATO
+    const r3Match = rawLink.match(/resolver3_mv=([^|#&]+)/);
+    if (r3Match && r3Match[1]) {
+      const exactSlug = r3Match[1].trim();
+      const result = await callGeekResolver(`{'resolver': 3, 'request': 'mvshows=${exactSlug}'}`);
+      if (result && typeof result === 'string' && (result.startsWith('http://') || result.startsWith('https://'))) {
+        const cleanUrl = result.split('|')[0];
+        movieStreamCache[cacheKey] = { url: cleanUrl, timestamp: Date.now() };
+        return res.json({ success: true, streamUrl: cleanUrl });
+      }
+    }
+
+    // Tag resolver2_mv=SLUG -> USA APENAS RESOLVER 2 COM O SLUG EXATO
+    const r2Match = rawLink.match(/resolver2_mv=([^|#&]+)/);
+    if (r2Match && r2Match[1]) {
+      const exactSlug = r2Match[1].trim();
+      const result = await callGeekResolver(`{'resolver': 2, 'request': 'mvshows=${exactSlug}'}`);
+      if (result && typeof result === 'string' && (result.startsWith('http://') || result.startsWith('https://'))) {
+        const cleanUrl = result.split('|')[0];
+        movieStreamCache[cacheKey] = { url: cleanUrl, timestamp: Date.now() };
+        return res.json({ success: true, streamUrl: cleanUrl });
+      }
+    }
+
+    // Se nenhuma tag específica resolveu, NÃO faz busca genérica no resolver 2 (evita troca de filmes)
     res.json({ 
       success: false, 
-      error: 'A transmissão deste título específico está instável no momento. Por favor, selecione outro filme com selo HD nas categorias de Ação, Aventura ou Suspense.' 
+      error: 'Transmissão indisponível no momento para este filme específico. Por favor, tente outro título do catálogo.' 
     });
   } catch (err) {
     console.error('Erro ao resolver filme:', err.message);

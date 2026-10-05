@@ -146,10 +146,33 @@ function playStream(url, title = 'Reproduzindo', isLive = false) {
   }
 }
 
-function showPlayerError(msg) {
+function openPlayerLoading(title) {
+  // Fecha imediatamente o modal de detalhes
+  const detailsModal = document.getElementById('detailsModal');
+  if (detailsModal) detailsModal.classList.remove('active');
+
+  playerTitle.textContent = title || 'Reproduzindo Vídeo';
+  if (playerLiveTag) playerLiveTag.style.display = 'none';
+
+  playerModal.classList.add('active');
+  playerLoading.style.display = 'flex';
+  if (playerLoadingText) playerLoadingText.textContent = 'Conectando ao vídeo...';
+  playerError.style.display = 'none';
+
+  videoElement.pause();
+  videoElement.removeAttribute('src');
+  videoElement.load();
+}
+
+function showPlayerError(msg, title = '') {
+  const detailsModal = document.getElementById('detailsModal');
+  if (detailsModal) detailsModal.classList.remove('active');
+
+  if (title) playerTitle.textContent = title;
+  playerModal.classList.add('active');
   playerLoading.style.display = 'none';
   playerError.style.display = 'flex';
-  playerErrorMsg.textContent = msg;
+  playerErrorMsg.textContent = msg || 'Não foi possível carregar a reprodução deste vídeo no momento.';
 }
 
 function closePlayer() {
