@@ -899,6 +899,34 @@ app.get('/api/search', async (req, res) => {
   }
 });
 
+// Dicionário de URLs conhecidas de colisão/troca de filmes causadas por bug de prefixo no upstream
+const PREFIX_COLLISION_STREAMS = {
+  '36408': '3 dias para matar',
+  '38420': 'cassino royale',
+  '38019': '10dance',
+  '36328': '12 herois',
+  '43039': 'prefix_4_trap',
+  '32556': 'prefix_5_trap',
+  '40036': 'prefix_9_trap',
+  '32839': 'prefix_19_trap'
+};
+
+function isLegitMovieStream(streamUrl, title, slug) {
+  if (!streamUrl) return false;
+  const normTitle = (title || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const normSlug = (slug || '').toLowerCase();
+  
+  for (const [id, expected] of Object.entries(PREFIX_COLLISION_STREAMS)) {
+    if (streamUrl.includes(`/movie/${id}.mp4`)) {
+      if (!normTitle.includes(expected) && !normSlug.includes(expected.replace(/\s+/g, '-'))) {
+        console.warn(`[Anti-Troca] Bloqueada troca incorreta do filme "${title}" pelo stream legado ${id}.mp4`);
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 app.get('/api/movie/stream', async (req, res) => {
   try {
     const { link, title } = req.query;
@@ -914,8 +942,10 @@ app.get('/api/movie/stream', async (req, res) => {
     // 1. Se o link já for uma URL direta
     if (rawLink.startsWith('http://') || rawLink.startsWith('https://')) {
       const cleanUrl = rawLink.split('|')[0].trim();
-      movieStreamCache[cacheKey] = { url: cleanUrl, timestamp: Date.now() };
-      return res.json({ success: true, streamUrl: cleanUrl });
+      if (isLegitMovieStream(cleanUrl, title, rawLink)) {
+        movieStreamCache[cacheKey] = { url: cleanUrl, timestamp: Date.now() };
+        return res.json({ success: true, streamUrl: cleanUrl });
+      }
     }
 
     // 2. Extração estrita de tags do provedor original
@@ -926,8 +956,10 @@ app.get('/api/movie/stream', async (req, res) => {
       const result = await callGeekResolver(`{'resolver': 2, 'request': 'mvshows=${exactSlug}'}`);
       if (result && typeof result === 'string' && (result.startsWith('http://') || result.startsWith('https://'))) {
         const cleanUrl = result.split('|')[0];
-        movieStreamCache[cacheKey] = { url: cleanUrl, timestamp: Date.now() };
-        return res.json({ success: true, streamUrl: cleanUrl });
+        if (isLegitMovieStream(cleanUrl, title, exactSlug)) {
+          movieStreamCache[cacheKey] = { url: cleanUrl, timestamp: Date.now() };
+          return res.json({ success: true, streamUrl: cleanUrl });
+        }
       }
     }
 
@@ -938,8 +970,10 @@ app.get('/api/movie/stream', async (req, res) => {
       const result = await callGeekResolver(`{'resolver': 3, 'request': 'mvshows=${exactSlug}'}`);
       if (result && typeof result === 'string' && (result.startsWith('http://') || result.startsWith('https://'))) {
         const cleanUrl = result.split('|')[0];
-        movieStreamCache[cacheKey] = { url: cleanUrl, timestamp: Date.now() };
-        return res.json({ success: true, streamUrl: cleanUrl });
+        if (isLegitMovieStream(cleanUrl, title, exactSlug)) {
+          movieStreamCache[cacheKey] = { url: cleanUrl, timestamp: Date.now() };
+          return res.json({ success: true, streamUrl: cleanUrl });
+        }
       }
     }
 
@@ -950,8 +984,10 @@ app.get('/api/movie/stream', async (req, res) => {
       const result = await callGeekResolver(`{'resolver': 2, 'request': 'mvshows=${exactSlug}'}`);
       if (result && typeof result === 'string' && (result.startsWith('http://') || result.startsWith('https://'))) {
         const cleanUrl = result.split('|')[0];
-        movieStreamCache[cacheKey] = { url: cleanUrl, timestamp: Date.now() };
-        return res.json({ success: true, streamUrl: cleanUrl });
+        if (isLegitMovieStream(cleanUrl, title, exactSlug)) {
+          movieStreamCache[cacheKey] = { url: cleanUrl, timestamp: Date.now() };
+          return res.json({ success: true, streamUrl: cleanUrl });
+        }
       }
     }
 
