@@ -397,307 +397,38 @@ async function openMovieDetailsModal(item) {
   if (episodesGrid) episodesGrid.innerHTML = '';
   if (episodesLoading) episodesLoading.style.display = 'none';
   
-  // Limpa alerta e seletor de servidores anteriores
-  const existingAlert = document.getElementById('movieModalAlert');
-  if (existingAlert) existingAlert.remove();
-  const existingServerPicker = document.getElementById('movieModalServerPicker');
-  if (existingServerPicker) existingServerPicker.remove();
-
-  // Monta lista de servidores disponíveis
-  const servers = buildMovieServers(item);
-  let selectedServerIndex = 0;
-
-  // Função para executar a reprodução de um servidor específico
-  async function launchMovieServer(srvIndex) {
-    const srv = servers[srvIndex];
-    if (!srv) return;
-
-    // Configura os servidores no player para troca dinâmica durante o filme
-    if (typeof setupPlayerServers === 'function') {
-      setupPlayerServers(servers, srvIndex, item.title);
-    }
-
-    if (srv.type === 'direct') {
-      modalPlayBtn.disabled = true;
-      modalPlayBtn.innerHTML = '<span class="spinner-sm" style="display:inline-block; vertical-align:middle; width:16px; height:16px; margin-right:8px;"></span> Conectando ao Servidor 1...';
-      
-      const oldAlert = document.getElementById('movieModalAlert');
-      if (oldAlert) oldAlert.remove();
-
-      try {
-        const res = await fetch(srv.url);
-        const data = await res.json();
-        modalPlayBtn.disabled = false;
-        modalPlayBtn.innerHTML = '<i data-feather="play"></i> Assistir Filme';
-        feather.replace();
-
-        if (data.success && data.streamUrl) {
-          detailsModal.classList.remove('active');
-          playStream(data.streamUrl, item.title, false, false);
-        } else {
-          showMovieAlternativeAlert(srvIndex);
-        }
-      } catch (err) {
-        modalPlayBtn.disabled = false;
-        modalPlayBtn.innerHTML = '<i data-feather="play"></i> Assistir Filme';
-        feather.replace();
-        showMovieAlternativeAlert(srvIndex);
-      }
-    } else {
-      // Embed alternativo
-      detailsModal.classList.remove('active');
-      playStream(srv.url, item.title, false, true);
-    }
-  }
-
-  function showMovieAlternativeAlert(failedIndex) {
-    const oldAlert = document.getElementById('movieModalAlert');
-    if (oldAlert) oldAlert.remove();
-
-    const alertDiv = document.createElement('div');
-    alertDiv.id = 'movieModalAlert';
-    alertDiv.style.cssText = 'margin-top:16px; padding:14px 18px; border-radius:12px; background:rgba(30, 41, 59, 0.95); border:1px solid rgba(59, 130, 246, 0.4); color:#e2e8f0; font-size:0.9rem; line-height:1.5;';
-    
-    const altButtons = servers
-      .map((s, idx) => {
-        if (idx === failedIndex) return '';
-        return `<button class="btn btn-sm" style="background:#2563eb; color:#fff; font-weight:600; padding:8px 14px; border-radius:8px; border:none; cursor:pointer; margin:4px; display:inline-flex; align-items:center; gap:6px;" onclick="window.launchSelectedMovieServer(${idx})">▶ Assistir via ${s.name}</button>`;
-      })
-      .filter(Boolean)
-      .join('');
-
-    alertDiv.innerHTML = `
-      <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-        <span style="font-size:1.3rem;">⚡</span>
-        <strong style="color:#60a5fa; font-size:0.95rem;">Servidor 1 ocupado no momento. Escolha outro player para assistir:</strong>
-      </div>
-      <p style="margin-bottom:10px; color:#cbd5e1; font-size:0.85rem;">Os servidores abaixo estão online e prontos para reproduzir este filme imediatamente:</p>
-      <div style="display:flex; flex-wrap:wrap; gap:6px;">
-        ${altButtons}
-      </div>
-    `;
-
-    modalPlayBtn.parentNode.insertBefore(alertDiv, modalPlayBtn.nextSibling);
-    if (window.feather) feather.replace();
-  }
-
-  // Cria seletor de servidores no modal
-  if (servers.length > 1) {
-    const pickerDiv = document.createElement('div');
-    pickerDiv.id = 'movieModalServerPicker';
-    pickerDiv.style.cssText = 'margin-top:16px; margin-bottom:14px; padding:12px 14px; background:rgba(15, 23, 42, 0.75); border:1px solid rgba(59, 130, 246, 0.25); border-radius:12px;';
-    
-    let chipsHtml = servers.map((srv, idx) => {
-      const isSelected = idx === selectedServerIndex;
-      return `
-        <button type="button" class="movie-server-chip" data-index="${idx}" style="background:${isSelected ? '#2563eb' : '#1e293b'}; color:#fff; border:1px solid ${isSelected ? '#60a5fa' : '#334155'}; border-radius:8px; padding:7px 12px; font-size:0.82rem; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px; transition:all 0.2s ease;">
-          <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${srv.color || '#38bdf8'};"></span>
-          ${srv.name}
-        </button>
-      `;
-    }).join('');
-
-    pickerDiv.innerHTML = `
-      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
-        <span style="font-size:0.8rem; font-weight:700; color:#93c5fd; text-transform:uppercase; letter-spacing:0.5px; display:flex; align-items:center; gap:5px;">
-          <i data-feather="server" style="width:13px; height:13px;"></i> Selecionar Servidor / Player:
-        </span>
-        <span style="font-size:0.75rem; color:#64748b;">${servers.length} Opções</span>
-      </div>
-      <div class="chips-container" style="display:flex; flex-wrap:wrap; gap:8px;">
-        ${chipsHtml}
-      </div>
-    `;
-
-    modalPlayBtn.parentNode.insertBefore(pickerDiv, modalPlayBtn);
-
-    // Eventos de clique nos chips
-    pickerDiv.querySelectorAll('.movie-server-chip').forEach(chip => {
-      chip.addEventListener('click', (e) => {
-        e.preventDefault();
-        const idx = parseInt(chip.getAttribute('data-index'), 10);
-        selectedServerIndex = idx;
-        pickerDiv.querySelectorAll('.movie-server-chip').forEach(c => {
-          c.style.background = '#1e293b';
-          c.style.borderColor = '#334155';
-        });
-        chip.style.background = '#2563eb';
-        chip.style.borderColor = '#60a5fa';
-        modalPlayBtn.innerHTML = `<i data-feather="play"></i> Assistir via ${servers[idx].name}`;
-        if (window.feather) feather.replace();
-      });
-    });
-  }
-
-  // Registra globalmente para cliques dentro de alertas
-  window.launchSelectedMovieServer = launchMovieServer;
-
   modalPlayBtn.className = 'btn btn-primary';
   modalPlayBtn.innerHTML = '<i data-feather="play"></i> Assistir Filme';
   modalPlayBtn.disabled = false;
-  modalPlayBtn.onclick = () => launchMovieServer(selectedServerIndex);
-  
+  modalPlayBtn.onclick = async () => {
+    modalPlayBtn.disabled = true;
+    modalPlayBtn.innerHTML = '<span class="spinner-sm" style="display:inline-block; vertical-align:middle; width:16px; height:16px; margin-right:8px;"></span> Conectando ao vídeo...';
+
+    try {
+      const link = item.externalLink || '';
+      const res = await fetch(`/api/movie/stream?link=${encodeURIComponent(link)}&title=${encodeURIComponent(item.title)}`);
+      const data = await res.json();
+
+      modalPlayBtn.disabled = false;
+      modalPlayBtn.innerHTML = '<i data-feather="play"></i> Assistir Filme';
+      feather.replace();
+
+      if (data.success && data.streamUrl) {
+        detailsModal.classList.remove('active');
+        playStream(data.streamUrl, item.title);
+      } else {
+        alert(data.error || 'Vídeo temporariamente indisponível no momento.');
+      }
+    } catch (err) {
+      modalPlayBtn.disabled = false;
+      modalPlayBtn.innerHTML = '<i data-feather="play"></i> Assistir Filme';
+      feather.replace();
+      alert('Falha ao conectar com o servidor.');
+    }
+  };
+
   feather.replace();
   detailsModal.classList.add('active');
-}
-
-// SERVIDORES MULTI-PLAYER UNIFICADOS PARA FILMES
-function buildMovieServers(item) {
-  const servers = [];
-  const link = item.externalLink || '';
-  const tmdbId = item.tmdbId || (/^\d+$/.test(item.id) ? item.id : null);
-
-  if (link && link !== 'here') {
-    servers.push({
-      id: 'server1',
-      name: 'Servidor 1 (Stream Direto HD)',
-      badge: 'Nativo HD',
-      color: '#10b981',
-      type: 'direct',
-      url: `/api/movie/stream?link=${encodeURIComponent(link)}&title=${encodeURIComponent(item.title || '')}`
-    });
-  }
-
-  if (tmdbId) {
-    servers.push({
-      id: 'server2',
-      name: 'Servidor 2 (VidLink Pro HD)',
-      badge: '1080p Sem Anúncios',
-      color: '#3b82f6',
-      type: 'embed',
-      url: `https://vidlink.pro/movie/${tmdbId}?primaryColor=3b82f6&secondaryColor=1d4ed8&autoplay=true`
-    });
-    servers.push({
-      id: 'server3',
-      name: 'Servidor 3 (MultiEmbed VIP)',
-      badge: 'Multi-Players / Dublado',
-      color: '#8b5cf6',
-      type: 'embed',
-      url: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1`
-    });
-    servers.push({
-      id: 'server4',
-      name: 'Servidor 4 (Embedder BR)',
-      badge: 'Nacional Dublado',
-      color: '#10b981',
-      type: 'embed',
-      url: `https://embedder.net/e/movie?tmdb=${tmdbId}`
-    });
-    servers.push({
-      id: 'server5',
-      name: 'Servidor 5 (VidSrc VIP)',
-      badge: 'Multi-Idiomas',
-      color: '#ec4899',
-      type: 'embed',
-      url: `https://vidsrc.me/embed/movie?tmdb=${tmdbId}`
-    });
-    servers.push({
-      id: 'server6',
-      name: 'Servidor 6 (VidSrc TO)',
-      badge: 'Ultra Rápido',
-      color: '#f59e0b',
-      type: 'embed',
-      url: `https://vidsrc.to/embed/movie/${tmdbId}`
-    });
-    servers.push({
-      id: 'server7',
-      name: 'Servidor 7 (AutoEmbed Global)',
-      badge: 'Auto-Player',
-      color: '#06b6d4',
-      type: 'embed',
-      url: `https://autoembed.co/movie/tmdb/${tmdbId}`
-    });
-    servers.push({
-      id: 'server8',
-      name: 'Servidor 8 (2Embed Ultra)',
-      badge: 'Player Rápido',
-      color: '#6366f1',
-      type: 'embed',
-      url: `https://www.2embed.cc/embed/${tmdbId}`
-    });
-  }
-
-  return servers;
-}
-
-// SERVIDORES MULTI-PLAYER UNIFICADOS PARA SÉRIES E EPISÓDIOS
-function buildEpisodeServers(item, ep, seasonNum = '1') {
-  const servers = [];
-  const sNum = parseInt(seasonNum || 1, 10) || 1;
-  const epNum = parseInt((ep && ep.number) || 1, 10) || 1;
-  const tmdbId = item.tmdbId || (/^\d+$/.test(item.id) ? item.id : null);
-
-  if (ep && ep.streamId) {
-    servers.push({
-      id: 'server1',
-      name: 'Servidor 1 (Stream Direto HD)',
-      badge: 'Nativo HD',
-      color: '#10b981',
-      type: 'direct',
-      url: `/api/episode/stream?streamId=${encodeURIComponent(ep.streamId)}&type=${encodeURIComponent(ep.type || 'resolver3')}`
-    });
-  }
-
-  if (tmdbId) {
-    servers.push({
-      id: 'server2',
-      name: 'Servidor 2 (VidLink Pro HD)',
-      badge: '1080p Sem Anúncios',
-      color: '#3b82f6',
-      type: 'embed',
-      url: `https://vidlink.pro/tv/${tmdbId}/${sNum}/${epNum}?primaryColor=3b82f6&secondaryColor=1d4ed8&autoplay=true`
-    });
-    servers.push({
-      id: 'server3',
-      name: 'Servidor 3 (MultiEmbed VIP)',
-      badge: 'Multi-Players / Dublado',
-      color: '#8b5cf6',
-      type: 'embed',
-      url: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1&s=${sNum}&e=${epNum}`
-    });
-    servers.push({
-      id: 'server4',
-      name: 'Servidor 4 (Embedder BR)',
-      badge: 'Nacional Dublado',
-      color: '#10b981',
-      type: 'embed',
-      url: `https://embedder.net/e/series?tmdb=${tmdbId}&sea=${sNum}&epi=${epNum}`
-    });
-    servers.push({
-      id: 'server5',
-      name: 'Servidor 5 (VidSrc VIP)',
-      badge: 'Multi-Idiomas',
-      color: '#ec4899',
-      type: 'embed',
-      url: `https://vidsrc.me/embed/tv?tmdb=${tmdbId}&season=${sNum}&episode=${epNum}`
-    });
-    servers.push({
-      id: 'server6',
-      name: 'Servidor 6 (VidSrc TO)',
-      badge: 'Ultra Rápido',
-      color: '#f59e0b',
-      type: 'embed',
-      url: `https://vidsrc.to/embed/tv/${tmdbId}/${sNum}/${epNum}`
-    });
-    servers.push({
-      id: 'server7',
-      name: 'Servidor 7 (AutoEmbed Global)',
-      badge: 'Auto-Player',
-      color: '#06b6d4',
-      type: 'embed',
-      url: `https://autoembed.co/tv/tmdb/${tmdbId}-${sNum}-${epNum}`
-    });
-    servers.push({
-      id: 'server8',
-      name: 'Servidor 8 (2Embed Ultra)',
-      badge: 'Player Rápido',
-      color: '#6366f1',
-      type: 'embed',
-      url: `https://www.2embed.cc/embedtv/${tmdbId}&s=${sNum}&e=${epNum}`
-    });
-  }
-
-  return servers;
 }
 
 // RENDERIZAÇÃO DE CARDS DE MÍDIA
@@ -928,36 +659,19 @@ async function openDetailsModal(item) {
         modalPlayBtn.innerHTML = '<i data-feather="play"></i> Assistir Episódio 1';
         modalPlayBtn.disabled = false;
         modalPlayBtn.onclick = () => {
-          playEpisode(item, firstEp, firstSeason.season || '1');
+          playEpisode(item, firstEp);
         };
       } else {
-        modalPlayBtn.innerHTML = '<i data-feather="play"></i> Reproduzir';
+        modalPlayBtn.innerHTML = '<i data-feather="play"></i> Indisponível';
         modalPlayBtn.disabled = true;
       }
     } else {
-      if (seasonsCountBadge) seasonsCountBadge.textContent = 'Multi-Players';
+      if (seasonsCountBadge) seasonsCountBadge.textContent = 'Indisponível';
       if (episodesGrid) {
-        episodesGrid.innerHTML = `
-          <div style="grid-column: 1 / -1; padding: 22px; background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 12px; text-align: center;">
-            <p style="color: #93c5fd; font-weight: 700; margin-bottom: 6px;">⚡ Episódios Disponíveis via Multi-Servidores</p>
-            <p style="color: #cbd5e1; font-size: 0.85rem; margin-bottom: 14px;">Você pode assistir aos episódios completos utilizando nossos servidores de streaming integrados:</p>
-            <button class="btn btn-primary" id="fallbackSeriesPlayBtn" style="margin: 0 auto; display:inline-flex; align-items:center; gap:8px;"><i data-feather="play"></i> Assistir Episódio 1 Agora</button>
-          </div>
-        `;
-        const fbBtn = document.getElementById('fallbackSeriesPlayBtn');
-        if (fbBtn) {
-          fbBtn.onclick = () => {
-            const fallbackEp = { number: '1', title: 'Episódio 1' };
-            playEpisode(item, fallbackEp, '1');
-          };
-        }
+        episodesGrid.innerHTML = '<div class="no-episodes">Nenhum episódio cadastrado nesta série no momento.</div>';
       }
-      modalPlayBtn.innerHTML = '<i data-feather="play"></i> Assistir Episódio 1';
-      modalPlayBtn.disabled = false;
-      modalPlayBtn.onclick = () => {
-        const fallbackEp = { number: '1', title: 'Episódio 1' };
-        playEpisode(item, fallbackEp, '1');
-      };
+      modalPlayBtn.innerHTML = '<i data-feather="play"></i> Indisponível';
+      modalPlayBtn.disabled = true;
     }
   } catch (err) {
     console.error('Erro ao carregar episódios:', err);
@@ -965,12 +679,8 @@ async function openDetailsModal(item) {
     if (episodesGrid) {
       episodesGrid.innerHTML = '<div class="no-episodes">Falha ao conectar com o servidor para buscar episódios.</div>';
     }
-    modalPlayBtn.innerHTML = '<i data-feather="play"></i> Assistir via Multi-Players';
-    modalPlayBtn.disabled = false;
-    modalPlayBtn.onclick = () => {
-      const fallbackEp = { number: '1', title: 'Episódio 1' };
-      playEpisode(item, fallbackEp, '1');
-    };
+    modalPlayBtn.innerHTML = '<i data-feather="play"></i> Indisponível';
+    modalPlayBtn.disabled = true;
   }
 
   feather.replace();
@@ -988,7 +698,7 @@ function renderSeasonPills(seasons, item) {
     pill.addEventListener('click', () => {
       document.querySelectorAll('.season-pill').forEach(p => p.classList.remove('active'));
       pill.classList.add('active');
-      renderEpisodesGrid(season.episodes || [], item, season.season || String(index + 1));
+      renderEpisodesGrid(season.episodes || [], item);
     });
 
     seasonPills.appendChild(pill);
@@ -996,11 +706,11 @@ function renderSeasonPills(seasons, item) {
 
   // Renderiza episódios da primeira temporada por padrão
   if (seasons.length > 0) {
-    renderEpisodesGrid(seasons[0].episodes || [], item, seasons[0].season || '1');
+    renderEpisodesGrid(seasons[0].episodes || [], item);
   }
 }
 
-function renderEpisodesGrid(episodes, item, seasonNum = '1') {
+function renderEpisodesGrid(episodes, item) {
   if (!episodesGrid) return;
   episodesGrid.innerHTML = '';
 
@@ -1021,7 +731,7 @@ function renderEpisodesGrid(episodes, item, seasonNum = '1') {
     `;
 
     card.addEventListener('click', () => {
-      playEpisode(item, ep, seasonNum, card);
+      playEpisode(item, ep, card);
     });
 
     episodesGrid.appendChild(card);
@@ -1030,48 +740,26 @@ function renderEpisodesGrid(episodes, item, seasonNum = '1') {
   feather.replace();
 }
 
-async function playEpisode(item, ep, seasonNum = '1', cardElement = null) {
+async function playEpisode(item, ep, cardElement = null) {
   if (cardElement) {
     document.querySelectorAll('.episode-card').forEach(c => c.classList.remove('active-ep'));
     cardElement.classList.add('active-ep');
   }
 
   const episodeTitle = `${item.title} - ${ep.title || `Episódio ${ep.number}`}`;
-  const epServers = buildEpisodeServers(item, ep, seasonNum);
-  
-  if (typeof setupPlayerServers === 'function') {
-    setupPlayerServers(epServers, 0, episodeTitle);
-  }
+  playStream(null, episodeTitle);
 
-  // Se o primeiro servidor for stream direto, tenta resolver
-  if (epServers.length > 0 && epServers[0].type === 'direct') {
-    playStream(null, episodeTitle);
-    try {
-      const res = await fetch(epServers[0].url);
-      const data = await res.json();
-      if (data.success && data.streamUrl) {
-        detailsModal.classList.remove('active');
-        playStream(data.streamUrl, episodeTitle, false, false);
-      } else {
-        // Se o servidor direto falhar, abre automaticamente com o Servidor 2 ou mostra erro com alternativas
-        if (epServers.length > 1) {
-          switchToServer(1);
-        } else {
-          showPlayerError(data.error || 'Não foi possível reproduzir este episódio no momento.');
-        }
-      }
-    } catch (err) {
-      if (epServers.length > 1) {
-        switchToServer(1);
-      } else {
-        showPlayerError('Falha ao conectar com o servidor do episódio.');
-      }
+  try {
+    const res = await fetch(`/api/episode/stream?streamId=${encodeURIComponent(ep.streamId || '')}&type=${encodeURIComponent(ep.type || 'resolver3')}`);
+    const data = await res.json();
+    if (data.success && data.streamUrl) {
+      detailsModal.classList.remove('active');
+      playStream(data.streamUrl, episodeTitle);
+    } else {
+      showPlayerError(data.error || 'Não foi possível reproduzir este episódio no momento.');
     }
-  } else if (epServers.length > 0) {
-    detailsModal.classList.remove('active');
-    playStream(epServers[0].url, episodeTitle, false, true);
-  } else {
-    showPlayerError('Nenhum servidor disponível para este episódio.');
+  } catch (err) {
+    showPlayerError('Falha ao conectar com o servidor do episódio.');
   }
 }
 

@@ -1,7 +1,6 @@
-// Gerenciador do Player de Vídeo (HLS, MP4 e Embed com Multi-Servidores e Escudo Anti-Anúncios)
+// Gerenciador do Player de Vídeo Nativo (HLS e MP4 com Proteção Total Anti-Popups)
 let hlsInstance = null;
 const videoElement = document.getElementById('videoPlayer');
-const embedPlayer = document.getElementById('embedPlayer');
 const playerModal = document.getElementById('playerModal');
 const playerTitle = document.getElementById('playerTitle');
 const playerLoading = document.getElementById('playerLoading');
@@ -11,102 +10,25 @@ const playerErrorMsg = document.getElementById('playerErrorMsg');
 const retryStreamBtn = document.getElementById('retryStreamBtn');
 const closePlayerBtn = document.getElementById('closePlayerBtn');
 const playerLiveTag = document.getElementById('playerLiveTag');
-const playerServerControls = document.getElementById('playerServerControls');
-const playerServerSelect = document.getElementById('playerServerSelect');
-const playerAlternativeServers = document.getElementById('playerAlternativeServers');
 
-// --- ESCUDO ANTI-ANÚNCIOS & ANTI-POPUPS ---
-const _nativeWindowOpen = window.open;
-let isShieldActive = false;
-
-function activatePopupShield() {
-  if (isShieldActive) return;
-  isShieldActive = true;
-  window.open = function(url) {
-    console.warn('[WMPlayWeb Shield] Bloqueada tentativa de abertura de aba/anúncio:', url);
-    return null;
-  };
-}
-
-function deactivatePopupShield() {
-  if (!isShieldActive) return;
-  isShieldActive = false;
-  window.open = _nativeWindowOpen;
-}
+// --- PROTEÇÃO TOTAL ANTI-POPUPS & ANTI-ANÚNCIOS ---
+// Bloqueia qualquer tentativa de abertura de nova aba ou popup pelo navegador
+window.open = function() {
+  console.warn('[WMPlayWeb] Bloqueada tentativa de abertura de nova aba.');
+  return null;
+};
 
 let currentStreamUrl = null;
 let currentStreamTitle = '';
 let currentIsLive = false;
-let currentActiveServers = [];
-let currentServerIndex = 0;
 
-function setupPlayerServers(servers, activeIndex = 0, title = '') {
-  currentActiveServers = servers || [];
-  currentServerIndex = activeIndex;
-  if (title) currentStreamTitle = title;
-  
-  if (!playerServerControls || !playerServerSelect) return;
-  
-  if (currentActiveServers.length > 1) {
-    playerServerControls.style.display = 'flex';
-    playerServerSelect.innerHTML = '';
-    currentActiveServers.forEach((srv, idx) => {
-      const opt = document.createElement('option');
-      opt.value = idx;
-      opt.textContent = srv.name;
-      if (idx === activeIndex) opt.selected = true;
-      playerServerSelect.appendChild(opt);
-    });
-  } else {
-    playerServerControls.style.display = 'none';
-  }
-}
-
-if (playerServerSelect) {
-  playerServerSelect.addEventListener('change', async (e) => {
-    const idx = parseInt(e.target.value, 10);
-    if (!isNaN(idx) && currentActiveServers[idx]) {
-      await switchToServer(idx);
-    }
-  });
-}
-
-async function switchToServer(index) {
-  currentServerIndex = index;
-  const srv = currentActiveServers[index];
-  if (!srv) return;
-  
-  if (playerServerSelect) playerServerSelect.value = index;
-  playerLoading.style.display = 'flex';
-  if (playerLoadingText) playerLoadingText.textContent = `Conectando ao ${srv.name}...`;
-  playerError.style.display = 'none';
-  if (playerAlternativeServers) playerAlternativeServers.style.display = 'none';
-  
-  if (srv.type === 'direct' && srv.url && srv.url.startsWith('/api/')) {
-    try {
-      const res = await fetch(srv.url);
-      const data = await res.json();
-      if (data.success && data.streamUrl) {
-        playStream(data.streamUrl, currentStreamTitle, false, false);
-      } else {
-        showPlayerError('Servidor 1 ocupado no momento. Escolha outro player abaixo:');
-      }
-    } catch (err) {
-      showPlayerError('Falha ao conectar com o Servidor 1. Escolha outro player abaixo:');
-    }
-  } else {
-    playStream(srv.url, currentStreamTitle, false, srv.type === 'embed');
-  }
-}
-window.switchToServer = switchToServer;
-
-function playStream(url, title = 'Reproduzindo', isLive = false, explicitIsEmbed = null) {
+function playStream(url, title = 'Reproduzindo', isLive = false) {
   if (!url) {
-    showPlayerError('Link de reprodução indisponível para este item.');
+    showPlayerError('Link de reprodução indisponível para este conteúdo.');
     return;
   }
 
-  // Fecha imediatamente qualquer modal de detalhes aberto para evitar modais sobrepostos
+  // Fecha imediatamente o modal de detalhes para focar no player
   const detailsModal = document.getElementById('detailsModal');
   if (detailsModal) {
     detailsModal.classList.remove('active');
@@ -118,6 +40,9 @@ function playStream(url, title = 'Reproduzindo', isLive = false, explicitIsEmbed
     const chId = parts[0];
     url = `/api/proxy/stream?url=${encodeURIComponent(`http://sixcine.store:80/live/468489339/355818635/${chId}.m3u8`)}&ua=XC-IPTV`;
   }
+
+  // Higieniza URL de pipes e parâmetros extras
+  url = url.split('|')[0].trim();
 
   currentStreamUrl = url;
   currentStreamTitle = title;
@@ -132,7 +57,6 @@ function playStream(url, title = 'Reproduzindo', isLive = false, explicitIsEmbed
   playerLoading.style.display = 'flex';
   if (playerLoadingText) playerLoadingText.textContent = 'Carregando vídeo...';
   playerError.style.display = 'none';
-  if (playerAlternativeServers) playerAlternativeServers.style.display = 'none';
 
   // Limpa instância HLS anterior se houver
   if (hlsInstance) {
@@ -143,48 +67,17 @@ function playStream(url, title = 'Reproduzindo', isLive = false, explicitIsEmbed
   // Remove fontes anteriores do elemento de vídeo
   videoElement.pause();
   videoElement.removeAttribute('src');
-
-  // Identifica se a URL é um Embed / Iframe ou stream direto de vídeo
-  const isVideoDirect = url.includes('.mp4') || 
-                        url.includes('.m3u8') || 
-                        url.includes('.webm') || 
-                        url.includes('wasabisys.com') || 
-                        url.includes('apperror404.com') || 
-                        url.includes('/api/proxy/stream');
-
-  const isEmbed = (explicitIsEmbed === true) || (!currentIsLive && !isVideoDirect && !url.startsWith('/api/'));
-
-  if (isEmbed && embedPlayer) {
-    activatePopupShield();
-    videoElement.style.display = 'none';
-    embedPlayer.style.display = 'block';
-    embedPlayer.src = url;
-    
-    // Oculta o loading rapidamente para que o usuário possa interagir com os controles nativos do player
-    const hideLoading = () => {
-      if (playerLoading) playerLoading.style.display = 'none';
-    };
-    embedPlayer.onload = hideLoading;
-    setTimeout(hideLoading, 1200);
-    return;
-  }
-
-  // Se for vídeo direto ou HLS, desativa o escudo e oculta o iframe
-  deactivatePopupShield();
-  if (embedPlayer) {
-    embedPlayer.style.display = 'none';
-    embedPlayer.src = 'about:blank';
-  }
+  videoElement.load();
   videoElement.style.display = 'block';
 
-  // CASO 2: É um arquivo MP4 direto (Wasabi S3, Apperror404, etc.)
+  // CASO 1: É um arquivo MP4 direto (Wasabi S3, Apperror404, etc.)
   const isMp4 = url.includes('.mp4') || url.includes('wasabisys.com') || url.includes('apperror404.com');
   if (isMp4) {
     videoElement.src = url;
     
     const onCanPlay = () => {
       playerLoading.style.display = 'none';
-      videoElement.play().catch(e => console.log('Autoplay MP4 aguardando interação:', e.message));
+      videoElement.play().catch(e => console.log('Autoplay aguardando interação:', e.message));
       videoElement.removeEventListener('canplay', onCanPlay);
       videoElement.removeEventListener('loadeddata', onCanPlay);
     };
@@ -193,12 +86,12 @@ function playStream(url, title = 'Reproduzindo', isLive = false, explicitIsEmbed
     videoElement.addEventListener('loadeddata', onCanPlay);
 
     videoElement.onerror = () => {
-      showPlayerError('Não foi possível carregar o arquivo de vídeo deste episódio no Servidor 1.');
+      showPlayerError('Não foi possível carregar a reprodução deste vídeo no momento.');
     };
     return;
   }
 
-  // CASO 3: É um stream HLS (.m3u8) - Canais ao Vivo e Pluto TV
+  // CASO 2: É um stream HLS (.m3u8) - Canais ao Vivo e Pluto TV
   if (Hls.isSupported()) {
     hlsInstance = new Hls({
       enableWorker: true,
@@ -246,7 +139,7 @@ function playStream(url, title = 'Reproduzindo', isLive = false, explicitIsEmbed
       showPlayerError('Falha ao carregar transmissão no navegador.');
     });
   } else {
-    // Fallback: tenta definir diretamente o src do vídeo
+    // Fallback direto
     videoElement.src = url;
     videoElement.play().catch(() => {});
     playerLoading.style.display = 'none';
@@ -257,31 +150,9 @@ function showPlayerError(msg) {
   playerLoading.style.display = 'none';
   playerError.style.display = 'flex';
   playerErrorMsg.textContent = msg;
-
-  if (playerAlternativeServers) {
-    if (currentActiveServers.length > 1) {
-      playerAlternativeServers.style.display = 'block';
-      playerAlternativeServers.innerHTML = `
-        <div style="background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(59, 130, 246, 0.35); border-radius: 12px; padding: 14px; margin: 12px 0;">
-          <p style="font-size: 0.88rem; font-weight: 700; color: #93c5fd; margin-bottom: 10px;">
-            ⚡ Escolha outro servidor abaixo para continuar assistindo agora:
-          </p>
-          <div style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;">
-            ${currentActiveServers.map((srv, idx) => {
-              if (idx === currentServerIndex) return '';
-              return `<button class="btn btn-sm btn-primary" style="padding:8px 14px; border-radius:8px; font-size:0.82rem; cursor:pointer;" onclick="window.switchToServer(${idx})">▶ ${srv.name}</button>`;
-            }).join('')}
-          </div>
-        </div>
-      `;
-    } else {
-      playerAlternativeServers.style.display = 'none';
-    }
-  }
 }
 
 function closePlayer() {
-  deactivatePopupShield();
   if (hlsInstance) {
     hlsInstance.destroy();
     hlsInstance = null;
@@ -289,13 +160,6 @@ function closePlayer() {
   videoElement.pause();
   videoElement.removeAttribute('src');
   videoElement.load();
-  if (embedPlayer) {
-    embedPlayer.src = 'about:blank';
-    embedPlayer.style.display = 'none';
-  }
-  if (playerServerControls) playerServerControls.style.display = 'none';
-  if (playerAlternativeServers) playerAlternativeServers.style.display = 'none';
-  currentActiveServers = [];
   playerModal.classList.remove('active');
 }
 
