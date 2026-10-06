@@ -899,11 +899,15 @@ app.get('/api/search', async (req, res) => {
   }
 });
 
-// Dicionário de URLs conhecidas de colisão/troca de filmes causadas por bug de prefixo no upstream
+// Dicionário de URLs conhecidas de colisão/troca de filmes causadas por bug de conversão numérica no upstream
+// No upstream (GeekAntenado), qualquer slug que começa com dígitos (ex: 10dance -> 10, 72-horas -> 72)
+// é convertido pelo banco para o ID daquela linha, retornando filmes completamente errados.
 const PREFIX_COLLISION_STREAMS = {
   '36408': '3 dias para matar',
   '38420': 'cassino royale',
-  '38019': '10dance',
+  '38019': 'harry potter', // No upstream, ID 10 é Harry Potter, NÃO é 10DANCE!
+  '40004': 'prefix_72_trap', // No upstream, ID 72 NÃO é 72 Horas em Miami!
+  '547686': 'prefix_31_trap',
   '36328': '12 herois',
   '43039': 'prefix_4_trap',
   '32556': 'prefix_5_trap',
@@ -916,14 +920,27 @@ function isLegitMovieStream(streamUrl, title, slug) {
   const normTitle = (title || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const normSlug = (slug || '').toLowerCase();
   
+  // Se o stream for um arquivo .mp4 com ID numérico no final da URL
   for (const [id, expected] of Object.entries(PREFIX_COLLISION_STREAMS)) {
-    if (streamUrl.includes(`/movie/${id}.mp4`)) {
+    if (streamUrl.includes(`/movie/${id}.mp4`) || streamUrl.includes(`/${id}.mp4`)) {
       if (!normTitle.includes(expected) && !normSlug.includes(expected.replace(/\s+/g, '-'))) {
-        console.warn(`[Anti-Troca] Bloqueada troca incorreta do filme "${title}" pelo stream legado ${id}.mp4`);
+        console.warn(`[Anti-Troca] Bloqueada troca incorreta do filme "${title}" (tentou reproduzir "${expected}" - ID ${id})`);
         return false;
       }
     }
   }
+
+  // Se o slug começar com número e o filme não for comprovadamente aquele, bloqueia para evitar reprodução errada
+  const startsWithNumber = /^(\d+|007)/.test(normSlug) || /^(\d+|007)/.test(normTitle);
+  if (startsWithNumber) {
+    // Apenas títulos explicitamente validados podem tocar
+    const isWhitelisted = normTitle.includes('cassino royale') || normTitle.includes('3 dias para matar');
+    if (!isWhitelisted) {
+      console.warn(`[Anti-Troca] Bloqueado stream suspeito por colisão numérica para o filme "${title}" (slug: ${slug})`);
+      return false;
+    }
+  }
+
   return true;
 }
 
